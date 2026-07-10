@@ -1,0 +1,41 @@
+app:
+  log_level: "info"
+
+clipboard:
+  enable: true
+  debounce_ms: 300
+  max_text_length: 3000
+  skip_url: true
+  skip_code: true
+  skip_sensitive: true
+  only_translate_english: true
+  english_min_ratio: 0.5
+  chinese_max_ratio: 0.3
+
+selection:
+  enable: true
+  hotkey: "Ctrl+Alt+T"
+  compatibility_mode: false
+
+llm:
+  provider: "openai_compatible"
+  base_url: "https://api.openai.com/v1"
+  api_key: "${LLM_API_KEY}"
+  model: ""
+  temperature: null
+  timeout_seconds: 20
+
+subtitle:
+  width_percent: 70
+  bottom_offset_percent: 4
+  font_size: 28
+  max_lines: 4
+  background_opacity: 0.38
+  fade_in_ms: 200
+  display_ms: 6000
+  fade_out_ms: 800
+
+logging:
+  include_source_text: false
+  max_size_mb: 10
+  max_backups: 3

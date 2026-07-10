@@ -1,0 +1,23 @@
+.codegraph/
+
+# Go / Wails 构建产物
+build/bin/
+*.exe
+*.syso
+
+# 前端依赖与产物
+frontend/node_modules/
+frontend/dist/*
+!frontend/dist/.gitkeep
+
+# 本地运行配置与日志
+config.yaml
+.env
+logs/
+*.log
+
+# 编辑器与系统文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
