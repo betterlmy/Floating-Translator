@@ -28,6 +28,7 @@ llm:
 subtitle:
   width_percent: 70
   bottom_offset_percent: 4
+  font_family: "Microsoft YaHei UI"
   font_size: 28
   max_lines: 4
   background_opacity: 0.38

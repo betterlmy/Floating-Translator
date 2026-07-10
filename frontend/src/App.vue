@@ -14,6 +14,7 @@ interface TranslationEvent {
 interface SubtitleConfig {
   width_percent: number
   bottom_offset_percent: number
+  font_family: string
   font_size: number
   max_lines: number
   background_opacity: number
@@ -26,6 +27,7 @@ type SubtitlePhase = 'hidden' | 'entering' | 'visible' | 'leaving'
 const defaultConfig: SubtitleConfig = {
   width_percent: 70,
   bottom_offset_percent: 4,
+  font_family: 'Microsoft YaHei UI',
   font_size: 28,
   max_lines: 4,
   background_opacity: 0.38,
@@ -103,6 +105,7 @@ function updateConfig(config: SubtitleConfig): void {
 
 onMounted(() => {
   if (isSettingsWindow) {
+    void runtimeBridge.ready().catch(() => undefined)
     return
   }
   removeTranslationListener = runtimeBridge.on<TranslationEvent>('translation:result', (event) => {

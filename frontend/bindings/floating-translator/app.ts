@@ -29,11 +29,22 @@ export function FrontendReady(): $CancellablePromise<void> {
 }
 
 /**
+ * GetAvailableFonts returns installed Windows font family names for the
+ * settings search control. Registry value names are the family names shown to
+ * users, while their values only contain font-file paths and are not exposed.
+ */
+export function GetAvailableFonts(): $CancellablePromise<string[]> {
+    return $Call.ByID(1394290628).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
  * GetSettings 返回设置窗口需要的完整配置，不包含已有 API Key 明文。
  */
 export function GetSettings(): $CancellablePromise<config$0.Settings> {
     return $Call.ByID(2554697378).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType1($result);
     });
 }
 
@@ -45,4 +56,5 @@ export function SaveSettings(settings: config$0.Settings): $CancellablePromise<v
 }
 
 // Private type creation functions
-const $$createType0 = config$0.Settings.createFrom;
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = config$0.Settings.createFrom;

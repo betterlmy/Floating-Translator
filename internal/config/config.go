@@ -81,6 +81,7 @@ type LLMConfig struct {
 type SubtitleConfig struct {
 	WidthPercent        int     `yaml:"width_percent" json:"width_percent"`
 	BottomOffsetPercent int     `yaml:"bottom_offset_percent" json:"bottom_offset_percent"`
+	FontFamily          string  `yaml:"font_family" json:"font_family"`
 	FontSize            int     `yaml:"font_size" json:"font_size"`
 	MaxLines            int     `yaml:"max_lines" json:"max_lines"`
 	BackgroundOpacity   float64 `yaml:"background_opacity" json:"background_opacity"`
@@ -126,6 +127,7 @@ func Default() Config {
 		Subtitle: SubtitleConfig{
 			WidthPercent:        70,
 			BottomOffsetPercent: 4,
+			FontFamily:          "Microsoft YaHei UI",
 			FontSize:            28,
 			MaxLines:            4,
 			BackgroundOpacity:   0.38,
@@ -303,6 +305,9 @@ func (c Config) Validate() error {
 	if c.Subtitle.BottomOffsetPercent < 0 || c.Subtitle.BottomOffsetPercent > 50 {
 		return invalid("subtitle.bottom_offset_percent 必须在 0 到 50 之间")
 	}
+	if strings.TrimSpace(c.Subtitle.FontFamily) == "" {
+		return invalid("subtitle.font_family 不能为空")
+	}
 	if c.Subtitle.FontSize < 12 || c.Subtitle.FontSize > 96 {
 		return invalid("subtitle.font_size 必须在 12 到 96 之间")
 	}
@@ -374,6 +379,7 @@ llm:
 subtitle:
   width_percent: 70
   bottom_offset_percent: 4
+  font_family: "Microsoft YaHei UI"
   font_size: 28
   max_lines: 4
   background_opacity: 0.38

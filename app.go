@@ -57,6 +57,15 @@ type windowController interface {
 	EmitEvent(name string, data any)
 }
 
+// subtitleController owns the platform-native subtitle surface. Keeping it
+// separate from the Wails settings window prevents WebView hosting behaviour
+// from affecting the transparency of the overlay.
+type subtitleController interface {
+	Configure(windowBounds, config.SubtitleConfig) error
+	Display(processor.Event)
+	Close()
+}
+
 // App 管理应用配置、翻译调度和桌面生命周期。
 type App struct {
 	mutex              sync.RWMutex
@@ -64,7 +73,7 @@ type App struct {
 
 	context        context.Context
 	application    applicationController
-	overlayWindow  windowController
+	subtitle       subtitleController
 	settingsWindow windowController
 	logger         *logger.Logger
 	desktop        platform.Desktop
@@ -80,17 +89,23 @@ type App struct {
 	settingsOpen  bool
 }
 
-func (a *App) setWindows(app applicationController, overlayWindow windowController, settingsWindow windowController) {
+func (a *App) setWindows(app applicationController, subtitle subtitleController, settingsWindow windowController) {
 	a.application = app
-	a.overlayWindow = overlayWindow
+	a.subtitle = subtitle
 	a.settingsWindow = settingsWindow
 }
 
 // NewApp 创建应用实例。
 func NewApp() *App {
+	return NewAppWithIcon(nil)
+}
+
+func NewAppWithIcon(icon []byte) *App {
+	desktop := platform.NewDesktop()
+	desktop.SetApplicationIcon(icon)
 	return &App{
 		logger:       logger.NewNop(),
-		desktop:      platform.NewDesktop(),
+		desktop:      desktop,
 		preparePaths: config.PreparePaths,
 	}
 }
@@ -199,9 +214,6 @@ func (a *App) FrontendReady() error {
 		}
 		listening := cfg.Clipboard.Enable
 		a.setListening(listening)
-	}
-	if a.overlayWindow != nil {
-		a.overlayWindow.Show()
 	}
 	return nil
 }
@@ -491,7 +503,7 @@ func (a *App) setListening(enabled bool) {
 }
 
 func (a *App) applySubtitleConfig(cfg config.SubtitleConfig) error {
-	if a.overlayWindow == nil {
+	if a.subtitle == nil {
 		return fmt.Errorf("字幕窗口尚未初始化")
 	}
 	if a.application == nil {
@@ -505,10 +517,7 @@ func (a *App) applySubtitleConfig(cfg config.SubtitleConfig) error {
 	if err != nil {
 		return err
 	}
-	a.overlayWindow.SetSize(bounds.Width, bounds.Height)
-	a.overlayWindow.SetPosition(bounds.X, bounds.Y)
-	a.overlayWindow.EmitEvent(subtitleConfigEvent, cfg)
-	return nil
+	return a.subtitle.Configure(bounds, cfg)
 }
 
 func calculateSubtitleWindowBounds(cfg config.SubtitleConfig, area workArea) (windowBounds, error) {
@@ -526,11 +535,10 @@ func (a *App) emitTranslation(event processor.Event) {
 	a.mutex.RLock()
 	ready := a.frontendReady
 	a.mutex.RUnlock()
-	if !ready || a.overlayWindow == nil {
+	if !ready || a.subtitle == nil {
 		return
 	}
-	a.overlayWindow.SetAlwaysOnTop(true)
-	a.overlayWindow.EmitEvent(translationResultEvent, event)
+	a.subtitle.Display(event)
 }
 
 func (a *App) openPath(path string) {
@@ -551,6 +559,9 @@ func (a *App) shutdown() {
 	}
 	if err := a.desktop.Stop(); err != nil {
 		a.logger.Warn("停止桌面集成失败", logger.ErrorField(err))
+	}
+	if a.subtitle != nil {
+		a.subtitle.Close()
 	}
 	a.logger.Info("应用已退出")
 	_ = a.logger.Sync()

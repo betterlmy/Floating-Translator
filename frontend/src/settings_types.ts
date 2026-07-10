@@ -34,6 +34,7 @@ export interface LLMSettings {
 export interface SubtitleSettings {
   width_percent: number
   bottom_offset_percent: number
+  font_family: string
   font_size: number
   max_lines: number
   background_opacity: number

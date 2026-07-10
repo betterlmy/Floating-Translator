@@ -23,6 +23,7 @@ const saving = ref(false)
 const temperatureEnabled = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const fontFamilies = ref<string[]>([])
 let successTimer: number | null = null
 let removeRefreshListener: (() => void) | null = null
 
@@ -52,6 +53,14 @@ async function loadSettings(): Promise<void> {
     errorMessage.value = `加载设置失败：${errorText(error)}`
   } finally {
     loading.value = false
+  }
+}
+
+async function loadFonts(): Promise<void> {
+  try {
+    fontFamilies.value = await runtimeBridge.getAvailableFonts()
+  } catch {
+    fontFamilies.value = []
   }
 }
 
@@ -130,6 +139,7 @@ onMounted(() => {
     }
   })
   void loadSettings()
+  void loadFonts()
 })
 
 onBeforeUnmount(() => {
@@ -300,9 +310,16 @@ onBeforeUnmount(() => {
               <label class="field"><span class="field-label">距底部</span><span class="input-with-unit"><input v-model.number="settings.subtitle.bottom_offset_percent" data-testid="bottom-offset" max="50" min="0" type="number" /><b>%</b></span></label>
               <label class="field"><span class="field-label">字号</span><span class="input-with-unit"><input v-model.number="settings.subtitle.font_size" max="96" min="12" type="number" /><b>px</b></span></label>
             </div>
+            <label class="field">
+              <span class="field-label">字体</span>
+              <select v-model="settings.subtitle.font_family" data-testid="font-family">
+                <option v-for="font in fontFamilies" :key="font" :value="font">{{ font }}</option>
+              </select>
+              <small>已读取 {{ fontFamilies.length }} 个 Windows 字体。</small>
+            </label>
             <div class="subtitle-preview">
               <span>PREVIEW</span>
-              <p :style="{fontSize: `${Math.min(settings.subtitle.font_size, 34)}px`}">翻译结果将在这里清晰呈现</p>
+              <p :style="{fontFamily: settings.subtitle.font_family, fontSize: `${Math.min(settings.subtitle.font_size, 34)}px`}">翻译结果将在这里清晰呈现</p>
               <small>距屏幕底部 {{ settings.subtitle.bottom_offset_percent }}%</small>
             </div>
             <div class="field-grid field-grid--two">

@@ -20,10 +20,14 @@ const (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed build/appicon.png
+var applicationIcon []byte
+
 func main() {
-	service := NewApp()
+	service := NewAppWithIcon(applicationIcon)
 	app := application.New(application.Options{
 		Name: "悬浮翻译器",
+		Icon: applicationIcon,
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
 		},
@@ -35,7 +39,12 @@ func main() {
 	})
 	app.RegisterService(application.NewService(service))
 
-	overlayWindow := app.Window.NewWithOptions(subtitleWindowOptions())
+	subtitle, err := newNativeSubtitleWindow()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "创建字幕窗口失败: %v\n", err)
+		return
+	}
+	defer subtitle.Close()
 	settingsWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:                       "settings",
 		Title:                      settingsWindowTitle,
@@ -51,13 +60,12 @@ func main() {
 		BackgroundColour:           application.NewRGB(16, 20, 22),
 		DefaultContextMenuDisabled: true,
 		Windows: application.WindowsWindow{
-			DisableIcon:                       true,
 			DisableFramelessWindowDecorations: true,
 		},
 	})
 	service.setWindows(
 		&wailsApplicationController{application: app},
-		&wailsWindowController{window: overlayWindow},
+		subtitle,
 		&wailsWindowController{window: settingsWindow},
 	)
 	settingsWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
@@ -67,31 +75,8 @@ func main() {
 		})
 	})
 
-	err := app.Run()
+	err = app.Run()
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "应用启动失败: %v\n", err)
-	}
-}
-
-func subtitleWindowOptions() application.WebviewWindowOptions {
-	return application.WebviewWindowOptions{
-		Name:                       "subtitle",
-		Title:                      subtitleWindowTitle,
-		Width:                      1000,
-		Height:                     300,
-		DisableResize:              true,
-		Frameless:                  true,
-		Hidden:                     true,
-		AlwaysOnTop:                true,
-		IgnoreMouseEvents:          true,
-		BackgroundType:             application.BackgroundTypeTransparent,
-		BackgroundColour:           application.NewRGBA(0, 0, 0, 0),
-		DefaultContextMenuDisabled: true,
-		Windows: application.WindowsWindow{
-			DisableIcon:                       true,
-			DisableFramelessWindowDecorations: true,
-			HiddenOnTaskbar:                   true,
-			WebView2CompositionHosting:        true,
-		},
 	}
 }

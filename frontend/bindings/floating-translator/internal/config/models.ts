@@ -275,6 +275,7 @@ export class Settings {
 export class SubtitleConfig {
     "width_percent": number;
     "bottom_offset_percent": number;
+    "font_family": string;
     "font_size": number;
     "max_lines": number;
     "background_opacity": number;
@@ -289,6 +290,9 @@ export class SubtitleConfig {
         }
         if (!("bottom_offset_percent" in $$source)) {
             this["bottom_offset_percent"] = 0;
+        }
+        if (!("font_family" in $$source)) {
+            this["font_family"] = "";
         }
         if (!("font_size" in $$source)) {
             this["font_size"] = 0;

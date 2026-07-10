@@ -9,6 +9,7 @@ import (
 	"floating-translator/internal/config"
 	"floating-translator/internal/hotkey"
 	"floating-translator/internal/platform"
+	"floating-translator/internal/processor"
 )
 
 type startupDesktop struct {
@@ -47,6 +48,9 @@ type testWindowController struct {
 	x           int
 	y           int
 	events      []string
+	subtitleCfg config.SubtitleConfig
+	translation processor.Event
+	closed      bool
 }
 
 func (c *testWindowController) Show()                         { c.shown = true }
@@ -56,12 +60,22 @@ func (c *testWindowController) SetAlwaysOnTop(enabled bool)   { c.alwaysOnTop = 
 func (c *testWindowController) SetSize(width int, height int) { c.width, c.height = width, height }
 func (c *testWindowController) SetPosition(x int, y int)      { c.x, c.y = x, y }
 func (c *testWindowController) EmitEvent(name string, _ any)  { c.events = append(c.events, name) }
+func (c *testWindowController) Configure(bounds windowBounds, cfg config.SubtitleConfig) error {
+	c.width, c.height = bounds.Width, bounds.Height
+	c.x, c.y = bounds.X, bounds.Y
+	c.subtitleCfg = cfg
+	return nil
+}
+func (c *testWindowController) Display(event processor.Event) { c.translation = event }
+func (c *testWindowController) Close()                        { c.closed = true }
 
 func (d *startupDesktop) Start(context.Context, platform.Callbacks) error {
 	*d.events = append(*d.events, "desktop_start")
 	d.started = true
 	return nil
 }
+
+func (d *startupDesktop) SetApplicationIcon([]byte) {}
 
 func (d *startupDesktop) SetListening(enabled bool) {
 	d.listening = enabled
@@ -181,12 +195,12 @@ func TestCalculateSubtitleWindowBounds(t *testing.T) {
 	}
 }
 
-func TestApplySubtitleConfigUpdatesWindowBoundsAndFrontend(t *testing.T) {
+func TestApplySubtitleConfigUpdatesNativeSubtitleBounds(t *testing.T) {
 	appController := &testApplicationController{area: workArea{Width: 2000, Height: 1000}}
 	window := &testWindowController{}
 	app := NewApp()
 	app.application = appController
-	app.overlayWindow = window
+	app.subtitle = window
 	cfg := config.Default().Subtitle
 	cfg.WidthPercent = 60
 	cfg.BottomOffsetPercent = 10
@@ -197,8 +211,26 @@ func TestApplySubtitleConfigUpdatesWindowBoundsAndFrontend(t *testing.T) {
 	if window.width != 1200 || window.height != 280 || window.x != 400 || window.y != 620 {
 		t.Fatalf("字幕窗口布局 = size(%d,%d) position(%d,%d)", window.width, window.height, window.x, window.y)
 	}
-	if len(window.events) != 1 || window.events[0] != subtitleConfigEvent {
-		t.Fatalf("窗口事件 = %v, want [%s]", window.events, subtitleConfigEvent)
+	if window.subtitleCfg != cfg {
+		t.Fatalf("字幕配置 = %#v, want %#v", window.subtitleCfg, cfg)
+	}
+}
+
+func TestEmitTranslationDisplaysOnlyWhenFrontendIsReady(t *testing.T) {
+	window := &testWindowController{}
+	app := NewApp()
+	app.subtitle = window
+	event := processor.Event{RequestID: 7, Text: "translated text"}
+
+	app.emitTranslation(event)
+	if window.translation.RequestID != 0 {
+		t.Fatalf("前端未就绪时不应展示字幕: %#v", window.translation)
+	}
+
+	app.frontendReady = true
+	app.emitTranslation(event)
+	if window.translation != event {
+		t.Fatalf("字幕事件 = %#v, want %#v", window.translation, event)
 	}
 }
 

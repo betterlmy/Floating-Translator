@@ -9,7 +9,8 @@ WINDOWS_GOARCH ?= amd64
 
 .DEFAULT_GOAL := help
 
-.PHONY: help fmt fmt-check tidy bindings frontend-install frontend-test frontend-build \
+
+.PHONY: help fmt fmt-check tidy bindings syso frontend-install frontend-test frontend-build \
 	test test-race vet check run build-windows clean
 
 help: ## 显示可用目标
@@ -27,6 +28,10 @@ tidy: ## 整理 Go 模块依赖
 bindings: ## 使用 Wails v3 CLI 重新生成前端绑定
 	@command -v $(WAILS) >/dev/null 2>&1 || (echo '未找到 $(WAILS)，请先安装 Wails v3 CLI'; exit 1)
 	$(WAILS) generate bindings -ts -d frontend/bindings
+
+syso: ## 生成 Windows 可执行文件图标和版本资源
+	@command -v $(WAILS) >/dev/null 2>&1 || (echo '未找到 $(WAILS)，请先安装 Wails v3 CLI'; exit 1)
+	$(WAILS) generate syso -manifest build/windows/wails.exe.manifest -info build/windows/info.json -icon build/windows/icon.ico -out rsrc_windows_amd64.syso -arch amd64
 
 frontend-install: ## 安装前端依赖
 	$(NPM) install --prefix $(FRONTEND_DIR)
@@ -54,7 +59,7 @@ check: fmt-check test-race vet frontend-test frontend-build ## 执行完整质�
 run: ## 启动 Wails 开发模式
 	$(WAILS) dev
 
-build-windows: frontend-build ## 使用已有前端产物构建 Windows x64 版本
+build-windows: frontend-build syso ## 使用已有前端产物构建 Windows x64 版本
 	@mkdir -p build/bin
 	GOOS=$(WINDOWS_GOOS) GOARCH=$(WINDOWS_GOARCH) CGO_ENABLED=0 $(GO) build \
 		-tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" \

@@ -4,6 +4,7 @@
 build/bin/
 *.exe
 *.syso
+!rsrc_windows_amd64.syso
 
 # 前端依赖与产物
 frontend/node_modules/

@@ -17,6 +17,7 @@ import (
 
 	"floating-translator/internal/hotkey"
 
+	"github.com/wailsapp/wails/v3/pkg/w32"
 	"golang.org/x/sys/windows"
 )
 
@@ -193,6 +194,7 @@ type windowsDesktop struct {
 	instance  uintptr
 	icon      uintptr
 	iconOwned bool
+	iconData  []byte
 
 	ready          chan error
 	done           chan struct{}
@@ -235,6 +237,12 @@ func NewDesktop() Desktop {
 	}
 	host.debounce.Store(int64(300 * time.Millisecond))
 	return host
+}
+
+func (d *windowsDesktop) SetApplicationIcon(icon []byte) {
+	d.stateMutex.Lock()
+	d.iconData = append(d.iconData[:0], icon...)
+	d.stateMutex.Unlock()
 }
 
 func (d *windowsDesktop) Start(ctx context.Context, callbacks Callbacks) error {
@@ -619,7 +627,18 @@ func (d *windowsDesktop) createMessageWindow() error {
 
 func (d *windowsDesktop) addTrayIcon() error {
 	if d.icon == 0 {
-		d.icon, d.iconOwned = loadExecutableIcon()
+		d.stateMutex.RLock()
+		iconData := append([]byte(nil), d.iconData...)
+		d.stateMutex.RUnlock()
+		if len(iconData) > 0 {
+			icon, err := w32.CreateSmallHIconFromImage(iconData)
+			if err == nil && icon != 0 {
+				d.icon, d.iconOwned = uintptr(icon), true
+			}
+		}
+		if d.icon == 0 {
+			d.icon, d.iconOwned = loadExecutableIcon()
+		}
 	}
 	if d.icon == 0 {
 		return errors.New("加载应用托盘图标失败")

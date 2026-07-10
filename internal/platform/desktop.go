@@ -64,6 +64,7 @@ type WindowOptions struct {
 
 // Desktop 定义剪切板、托盘和透明窗口能力。
 type Desktop interface {
+	SetApplicationIcon(icon []byte)
 	Start(ctx context.Context, callbacks Callbacks) error
 	SetListening(enabled bool)
 	SetDebounce(duration time.Duration)

@@ -14,6 +14,8 @@ type unsupportedDesktop struct{}
 // NewDesktop 创建当前平台的桌面实现。
 func NewDesktop() Desktop { return &unsupportedDesktop{} }
 
+func (d *unsupportedDesktop) SetApplicationIcon([]byte) {}
+
 func (d *unsupportedDesktop) Start(context.Context, Callbacks) error { return ErrUnsupported }
 
 func (d *unsupportedDesktop) SetListening(bool) {}
