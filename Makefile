@@ -110,6 +110,7 @@ package-macos: build-macos ## 生成 macOS .app.zip 和 .dmg
 		set -e; \
 		trap 'rm -rf "$$staging"' EXIT; \
 		ditto --norsrc "$(MACOS_APP_DIR)" "$$staging/Floating Translator.app"; \
+		ln -s /Applications "$$staging/Applications"; \
 		xattr -cr "$$staging/Floating Translator.app" 2>/dev/null || true; \
 		codesign --force --deep --sign - "$$staging/Floating Translator.app"; \
 		codesign --verify --deep --strict "$$staging/Floating Translator.app"; \
