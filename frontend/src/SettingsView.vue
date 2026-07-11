@@ -32,11 +32,13 @@ const hotkeyPlaceholder = isMacOS ? 'Command+Option+T' : 'Ctrl+Alt+T'
 const hotkeyHelp = isMacOS
   ? '支持 Command(⌘)、Option(⌥)、Shift 加字母、数字或 F1-F24'
   : '支持 Ctrl、Alt、Shift、Win 加字母、数字或 F1-F24'
+const fontPlatformLabel = isMacOS ? 'macOS' : 'Windows'
+const saveShortcutLabel = isMacOS ? '⌘' : 'Ctrl'
 
 const activeMeta = computed(() => sections.find((section) => section.id === activeSection.value) ?? sections[0])
 const apiKeyPlaceholder = computed(() => {
   if (settings.value?.llm.api_key_configured) {
-    return '已安全配置，留空保持不变'
+    return '已安全配置，未修改时留空保持不变'
   }
   return '输入 API Key'
 })
@@ -100,9 +102,11 @@ async function saveSettings(): Promise<void> {
       settings.value.llm.temperature = null
     }
     const payload = JSON.parse(JSON.stringify(settings.value)) as SettingsData
+    const apiKeyChanged = settings.value.llm.api_key_changed
+    const apiKeyConfigured = settings.value.llm.api_key.trim() !== ''
     await runtimeBridge.saveSettings(payload)
-    if (settings.value.llm.api_key_changed && settings.value.llm.api_key.trim() !== '') {
-      settings.value.llm.api_key_configured = true
+    if (apiKeyChanged) {
+      settings.value.llm.api_key_configured = apiKeyConfigured
     }
     settings.value.llm.api_key = ''
     settings.value.llm.api_key_changed = false
@@ -245,7 +249,7 @@ onBeforeUnmount(() => {
                 :placeholder="apiKeyPlaceholder"
                 @input="markAPIKeyChanged"
               />
-              <small>已有密钥不会返回界面，留空不会覆盖</small>
+              <small>已有密钥不会返回界面；未修改时留空会保留，输入后清空并保存会移除</small>
             </label>
             <div class="field-grid field-grid--two">
               <label class="field">
@@ -286,7 +290,7 @@ onBeforeUnmount(() => {
               <label class="setting-row"><span><strong>跳过 URL</strong><small>整段内容为网页地址时不翻译</small></span><input v-model="settings.clipboard.skip_url" class="native-toggle" type="checkbox" /></label>
               <label class="setting-row"><span><strong>跳过代码</strong><small>识别到明显代码结构时不翻译</small></span><input v-model="settings.clipboard.skip_code" class="native-toggle" type="checkbox" /></label>
               <label class="setting-row"><span><strong>保护敏感内容</strong><small>阻止疑似密钥、Token 和密码</small></span><input v-model="settings.clipboard.skip_sensitive" class="native-toggle" type="checkbox" /></label>
-              <label class="setting-row"><span><strong>仅翻译英文</strong><small>按语言字符比例过滤内容</small></span><input v-model="settings.clipboard.only_translate_english" class="native-toggle" type="checkbox" /></label>
+              <label class="setting-row"><span><strong>仅翻译英文</strong><small>按 ASCII 英文字母比例和英文词汇过滤，其他拉丁文字会跳过</small></span><input v-model="settings.clipboard.only_translate_english" class="native-toggle" type="checkbox" /></label>
             </div>
             <div class="field-grid field-grid--two">
               <label class="field"><span class="field-label">英文最低比例</span><input v-model.number="settings.clipboard.english_min_ratio" max="1" min="0" step="0.05" type="number" /></label>
@@ -305,7 +309,7 @@ onBeforeUnmount(() => {
               <small>{{ hotkeyHelp }}</small>
             </label>
             <label class="setting-row setting-row--warning">
-              <span><strong>强制兼容</strong><small>仅在原剪贴板全部格式可安全快照时模拟 {{ isMacOS ? 'Command+C' : 'Ctrl+C' }} 并恢复；否则不会修改剪贴板</small></span>
+              <span><strong>强制兼容</strong><small>仅在原剪贴板只有纯文本时模拟 {{ isMacOS ? 'Command+C' : 'Ctrl+C' }} 并恢复；复杂格式或期间出现新的复制内容会取消操作</small></span>
               <input v-model="settings.selection.compatibility_mode" data-testid="selection-compatibility" :disabled="!settings.selection.enable" class="native-toggle" type="checkbox" />
             </label>
             <div class="info-card">
@@ -325,7 +329,7 @@ onBeforeUnmount(() => {
               <select v-model="settings.subtitle.font_family" data-testid="font-family">
                 <option v-for="font in fontFamilies" :key="font" :value="font">{{ font }}</option>
               </select>
-              <small>已读取 {{ fontFamilies.length }} 个 Windows 字体。</small>
+              <small>已读取 {{ fontFamilies.length }} 个 {{ fontPlatformLabel }} 字体。</small>
             </label>
             <div class="subtitle-preview">
               <span>PREVIEW</span>
@@ -367,7 +371,7 @@ onBeforeUnmount(() => {
     </div>
 
     <footer class="settings-actions">
-      <span><kbd>Esc</kbd> 关闭设置 <i></i> <kbd>Ctrl</kbd> + <kbd>S</kbd> 保存</span>
+      <span><kbd>Esc</kbd> 关闭设置 <i></i> <kbd>{{ saveShortcutLabel }}</kbd> + <kbd>S</kbd> 保存</span>
       <div>
         <button class="button button--quiet" type="button" @click="closeSettings">取消</button>
         <button class="button button--save" type="button" :disabled="loading || saving || !settings" data-testid="save-settings" @click="saveSettings">

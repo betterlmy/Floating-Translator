@@ -30,8 +30,12 @@ const (
 	maxLogBackups        = 100
 )
 
-// ErrInvalidConfig 表示配置未满足运行要求。
-var ErrInvalidConfig = errors.New("配置无效")
+var (
+	// ErrInvalidConfig 表示配置未满足运行要求。
+	ErrInvalidConfig = errors.New("配置无效")
+	// ErrMissingAPIKey 表示运行配置没有可用的 API Key。
+	ErrMissingAPIKey = errors.New("缺少 API Key")
+)
 
 // Paths 描述应用运行时使用的目录和文件路径。
 type Paths struct {
@@ -340,7 +344,7 @@ func (c Config) Validate() error {
 		return invalid("llm.base_url 必须是有效的 HTTP 或 HTTPS 地址")
 	}
 	if strings.TrimSpace(c.LLM.APIKey) == "" {
-		return invalid("缺少 API Key，请设置 LLM_API_KEY 或 llm.api_key")
+		return fmt.Errorf("%w: %w，请设置 LLM_API_KEY 或 llm.api_key", ErrInvalidConfig, ErrMissingAPIKey)
 	}
 	if strings.TrimSpace(c.LLM.Model) == "" {
 		return invalid("llm.model 不能为空")

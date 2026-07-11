@@ -69,6 +69,9 @@ func TestLoadFileRejectsMissingSecret(t *testing.T) {
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("LoadFile() error = %v, want ErrInvalidConfig", err)
 	}
+	if !errors.Is(err, ErrMissingAPIKey) {
+		t.Fatalf("LoadFile() error = %v, want ErrMissingAPIKey", err)
+	}
 }
 
 func TestValidateRejectsNonFiniteAndUnboundedValues(t *testing.T) {

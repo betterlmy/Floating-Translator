@@ -54,6 +54,24 @@ describe('SettingsView', () => {
     expect(saved.llm.api_key_changed).toBe(true)
   })
 
+  it('输入后清空 API Key 可以保存并清除配置状态', async () => {
+    vi.spyOn(runtimeBridge, 'getSettings').mockResolvedValue(settingsFixture())
+    vi.spyOn(runtimeBridge, 'getAvailableFonts').mockResolvedValue([])
+    const save = vi.spyOn(runtimeBridge, 'saveSettings').mockResolvedValue()
+    const wrapper = mount(SettingsView)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="api-key"]').setValue('temporary-secret')
+    await wrapper.get('[data-testid="api-key"]').setValue('')
+    await wrapper.get('[data-testid="save-settings"]').trigger('click')
+    await flushPromises()
+
+    expect(save).toHaveBeenCalledOnce()
+    expect(save.mock.calls[0][0].llm.api_key).toBe('')
+    expect(save.mock.calls[0][0].llm.api_key_changed).toBe(true)
+    expect(wrapper.find('.configured-badge').exists()).toBe(false)
+  })
+
   it('窗口再次显示时重新读取最新配置', async () => {
     const initial = settingsFixture()
     const updated = settingsFixture()

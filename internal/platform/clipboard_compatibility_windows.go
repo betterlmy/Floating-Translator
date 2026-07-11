@@ -25,13 +25,15 @@ const (
 	virtualKeyRightWindows    = 0x5C
 	virtualKeyC               = 0x43
 	globalMemoryMoveable      = 0x0002
+	clipboardFormatText       = 1
 	clipboardFormatBitmap     = 2
 	clipboardFormatMetafile   = 3
 	clipboardFormatPalette    = 9
 	clipboardFormatEnhMeta    = 14
-	clipboardFormatPrivateMin = 0x0200
-	clipboardFormatGDIEnd     = 0x03FF
+	clipboardFormatOEMText    = 7
+	clipboardFormatLocale     = 16
 	clipboardPollInterval     = 15 * time.Millisecond
+	clipboardCopySettleTime   = 50 * time.Millisecond
 	modifierReleaseInterval   = 10 * time.Millisecond
 	modifierReleaseSettleTime = 25 * time.Millisecond
 	maxClipboardSnapshotBytes = 256 * 1024 * 1024
@@ -105,9 +107,14 @@ func (d *windowsDesktop) CompatibleSelectedText(ctx context.Context, maxLength i
 	snapshotSequence := clipboardSequenceNumber()
 	restoreSequence := snapshotSequence
 	copyAttempted := false
+	restoreAllowed := false
 	defer func() {
-		if !copyAttempted || clipboardSequenceNumber() != restoreSequence {
+		currentSequence := clipboardSequenceNumber()
+		if !copyAttempted || !restoreAllowed || currentSequence != restoreSequence {
 			d.internalClipboard.Store(false)
+			if copyAttempted && currentSequence != snapshotSequence {
+				d.onClipboardUpdate()
+			}
 			return
 		}
 		restoreContext, cancelRestore := context.WithTimeout(context.Background(), time.Second)
@@ -115,14 +122,20 @@ func (d *windowsDesktop) CompatibleSelectedText(ctx context.Context, maxLength i
 		cancelRestore()
 		if errors.Is(restoreErr, errClipboardChangedDuringRestore) {
 			d.internalClipboard.Store(false)
+			d.onClipboardUpdate()
+			return
+		}
+		if restoreErr != nil {
+			d.internalClipboard.Store(false)
+			d.onClipboardUpdate()
+			if err == nil {
+				text = ""
+				err = restoreErr
+			}
 			return
 		}
 		d.ignoredClipboardSequence.Store(clipboardSequenceNumber())
 		d.internalClipboard.Store(false)
-		if err == nil && restoreErr != nil {
-			text = ""
-			err = restoreErr
-		}
 	}()
 
 	if err := waitForModifierKeysReleased(ctx); err != nil {
@@ -142,6 +155,7 @@ func (d *windowsDesktop) CompatibleSelectedText(ctx context.Context, maxLength i
 	if err != nil {
 		return "", err
 	}
+	restoreAllowed = true
 	if utf8.RuneCountInString(text) > maxLength {
 		return "", ErrSelectedTextTooLong
 	}
@@ -202,9 +216,9 @@ func (d *windowsDesktop) snapshotClipboard(ctx context.Context) (*clipboardSnaps
 			break
 		}
 		format = uint32(nextFormat)
-		if !isGlobalMemoryClipboardFormat(format) {
+		if !isSafeClipboardSnapshotFormat(format) {
 			snapshot.release()
-			return nil, fmt.Errorf("保存原剪贴板失败：格式 %d 不支持安全复制", format)
+			return nil, fmt.Errorf("%w：格式 %d 不是纯文本格式", ErrClipboardUnsafe, format)
 		}
 		handle, _, callErr := procGetClipboardData.Call(uintptr(format))
 		if handle == 0 {
@@ -319,13 +333,16 @@ func cloneGlobalMemory(handle uintptr, remainingBytes uintptr) (uintptr, uintptr
 	return clone, size, nil
 }
 
-func isGlobalMemoryClipboardFormat(format uint32) bool {
+func isSafeClipboardSnapshotFormat(format uint32) bool {
+	// Only plain-text formats and the standard locale metadata are copied and
+	// restored. Registered, private and delayed-rendered formats may look like
+	// memory handles but are not safe to reconstruct byte-for-byte without their
+	// owning application.
 	switch format {
-	case clipboardFormatBitmap, clipboardFormatMetafile, clipboardFormatPalette, clipboardFormatEnhMeta,
-		0x0082, 0x0083, 0x008E:
-		return false
+	case clipboardFormatText, clipboardFormatOEMText, clipboardFormatUnicodeText, clipboardFormatLocale:
+		return true
 	default:
-		return format < clipboardFormatPrivateMin || format > clipboardFormatGDIEnd
+		return false
 	}
 }
 
@@ -348,11 +365,23 @@ func (d *windowsDesktop) waitForCopiedText(ctx context.Context, initialSequence 
 		currentSequence := clipboardSequenceNumber()
 		if !clipboardChanged && currentSequence != initialSequence {
 			clipboardChanged = true
+			lastSequence = currentSequence
+		} else if clipboardChanged && currentSequence != lastSequence {
+			return "", currentSequence, fmt.Errorf("%w：检测到多次剪贴板更新", ErrClipboardChangedDuringCopy)
 		}
 		if clipboardChanged {
-			lastSequence = currentSequence
 			text, available, readErr := d.readClipboard()
 			if readErr == nil && available && text != "" {
+				settleTimer := time.NewTimer(clipboardCopySettleTime)
+				select {
+				case <-ctx.Done():
+					settleTimer.Stop()
+					return "", currentSequence, ctx.Err()
+				case <-settleTimer.C:
+				}
+				if settledSequence := clipboardSequenceNumber(); settledSequence != currentSequence {
+					return "", settledSequence, fmt.Errorf("%w：检测到新的剪贴板内容", ErrClipboardChangedDuringCopy)
+				}
 				return text, currentSequence, nil
 			}
 			if readErr != nil {

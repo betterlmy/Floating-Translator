@@ -19,6 +19,7 @@ void macosFreeString(char *value);
 void *macosClipboardSnapshotCreate(void);
 void macosClipboardSnapshotRelease(void *value);
 int macosClipboardSnapshotRestore(void *value);
+int macosWaitForModifierKeysReleased(int timeoutMilliseconds);
 int macosSendCopyShortcut(void);
 int macosAccessibilityTrusted(void);
 void macosOpenAccessibilitySettings(void);
@@ -235,7 +236,7 @@ func (d *darwinDesktop) CompatibleSelectedText(ctx context.Context, maxLength in
 
 	snapshot := C.macosClipboardSnapshotCreate()
 	if snapshot == nil {
-		return "", errors.New("创建剪贴板快照失败，已终止兼容选区读取")
+		return "", fmt.Errorf("%w：创建剪贴板快照失败，已终止兼容选区读取", ErrClipboardUnsafe)
 	}
 	defer C.macosClipboardSnapshotRelease(snapshot)
 
@@ -243,13 +244,30 @@ func (d *darwinDesktop) CompatibleSelectedText(ctx context.Context, maxLength in
 	defer d.internalClipboard.Store(false)
 
 	before := int64(C.macosClipboardChangeCount())
+	if C.macosWaitForModifierKeysReleased(750) == 0 {
+		return "", errors.New("等待划词快捷键修饰键释放超时，已终止兼容选区读取")
+	}
 	if C.macosSendCopyShortcut() == 0 {
 		return "", errors.New("发送复制快捷键失败，请在系统设置中授予辅助功能权限")
 	}
 
 	var copiedSequence int64
+	restoreAllowed := false
 	defer func() {
-		d.restoreClipboardSnapshot(snapshot, copiedSequence)
+		currentSequence := int64(C.macosClipboardChangeCount())
+		if !restoreAllowed || copiedSequence == 0 || currentSequence != copiedSequence {
+			d.internalClipboard.Store(false)
+			if currentSequence != before {
+				d.onClipboardUpdate(currentSequence)
+			}
+			return
+		}
+		if !d.restoreClipboardSnapshot(snapshot, copiedSequence) {
+			d.internalClipboard.Store(false)
+			d.onClipboardUpdate(int64(C.macosClipboardChangeCount()))
+			return
+		}
+		d.internalClipboard.Store(false)
 	}()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
@@ -270,6 +288,17 @@ func (d *darwinDesktop) CompatibleSelectedText(ctx context.Context, maxLength in
 			if text == "" {
 				return "", ErrNoSelectedText
 			}
+			settleTimer := time.NewTimer(50 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				settleTimer.Stop()
+				return "", ctx.Err()
+			case <-settleTimer.C:
+			}
+			if settledSequence := int64(C.macosClipboardChangeCount()); settledSequence != current {
+				return "", fmt.Errorf("%w：检测到新的剪贴板内容", ErrClipboardChangedDuringCopy)
+			}
+			restoreAllowed = true
 			if utf8.RuneCountInString(text) > maxLength {
 				return "", ErrSelectedTextTooLong
 			}
@@ -280,21 +309,22 @@ func (d *darwinDesktop) CompatibleSelectedText(ctx context.Context, maxLength in
 	}
 }
 
-func (d *darwinDesktop) restoreClipboardSnapshot(snapshot unsafe.Pointer, copiedSequence int64) {
+func (d *darwinDesktop) restoreClipboardSnapshot(snapshot unsafe.Pointer, copiedSequence int64) bool {
 	if snapshot == nil || copiedSequence == 0 {
-		return
+		return false
 	}
 	current := int64(C.macosClipboardChangeCount())
 	if current != copiedSequence {
-		return
+		return false
 	}
 	if C.macosClipboardSnapshotRestore(snapshot) == 0 {
-		return
+		return false
 	}
 	restoredSequence := int64(C.macosClipboardChangeCount())
 	if restoredSequence != 0 {
 		d.ignoredSequence.Store(restoredSequence)
 	}
+	return true
 }
 
 func (d *darwinDesktop) ApplyOverlay(_ OverlayOptions) error {

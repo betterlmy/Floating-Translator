@@ -4,6 +4,7 @@
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 #import <dispatch/dispatch.h>
+#include <time.h>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -389,28 +390,44 @@ void *macosClipboardSnapshotCreate(void) {
     run_on_main_sync(^{
         NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
         NSArray *types = [pasteboard types];
-        if (types == nil) {
+        if (types == nil || types.count == 0) {
             return;
         }
 
-        NSMutableArray *data = [[NSMutableArray alloc] initWithCapacity:types.count];
+        NSString *stringType = [pasteboard availableTypeFromArray:@[
+            NSPasteboardTypeString,
+            @"public.utf16-plain-text",
+            @"public.utf16-external-plain-text",
+        ]];
+        if (stringType == nil) {
+            return;
+        }
         for (NSString *type in types) {
-            NSData *value = [pasteboard dataForType:type];
-            if (value == nil) {
-                [data release];
+            if (![type isEqualToString:NSPasteboardTypeString] &&
+                ![type isEqualToString:@"public.utf16-plain-text"] &&
+                ![type isEqualToString:@"public.utf16-external-plain-text"]) {
                 return;
             }
-            [data addObject:[[value copy] autorelease]];
+        }
+
+        NSData *value = [pasteboard dataForType:stringType];
+        if (value == nil) {
+            return;
         }
 
         snapshot = (macosClipboardSnapshot *)calloc(1, sizeof(*snapshot));
         if (snapshot == NULL) {
-            [data release];
             return;
         }
-        snapshot->types = [[NSArray alloc] initWithArray:types];
-        snapshot->data = [[NSArray alloc] initWithArray:data];
-        [data release];
+        snapshot->types = [[NSArray alloc] initWithObjects:stringType, nil];
+        snapshot->data = [[NSArray alloc] initWithObjects:
+            [[value copy] autorelease], nil];
+        if (snapshot->types == nil || snapshot->data == nil) {
+            [snapshot->types release];
+            [snapshot->data release];
+            free(snapshot);
+            snapshot = NULL;
+        }
     });
     return snapshot;
 }
@@ -445,6 +462,38 @@ int macosClipboardSnapshotRestore(void *value) {
         }
     });
     return restored;
+}
+
+static int macosModifierKeysPressed(void) {
+    const CGKeyCode modifierKeyCodes[] = {
+        54, 55, 56, 60, 58, 61, 59, 62,
+    };
+    for (NSUInteger index = 0;
+         index < sizeof(modifierKeyCodes) / sizeof(modifierKeyCodes[0]);
+         index++) {
+        if (CGEventSourceKeyState(
+                kCGEventSourceStateHIDSystemState,
+                modifierKeyCodes[index])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int macosWaitForModifierKeysReleased(int timeoutMilliseconds) {
+    if (timeoutMilliseconds < 0) {
+        timeoutMilliseconds = 0;
+    }
+    int elapsedMilliseconds = 0;
+    const struct timespec interval = {0, 10 * 1000 * 1000};
+    while (macosModifierKeysPressed()) {
+        if (elapsedMilliseconds >= timeoutMilliseconds) {
+            return 0;
+        }
+        nanosleep(&interval, NULL);
+        elapsedMilliseconds += 10;
+    }
+    return 1;
 }
 
 int macosSendCopyShortcut(void) {

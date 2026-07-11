@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,6 +100,44 @@ func TestSettingsReplaceChangedAPIKey(t *testing.T) {
 	}
 	if strings.Contains(string(updated), "old-secret") || !strings.Contains(string(updated), "new-secret") {
 		t.Fatalf("API Key 未正确替换:\n%s", updated)
+	}
+}
+
+func TestSettingsCanClearAPIKey(t *testing.T) {
+	t.Setenv("LLM_API_KEY", "")
+	path := filepath.Join(t.TempDir(), ConfigFileName)
+	content := strings.Replace(DefaultTemplate, `api_key: "${LLM_API_KEY}"`, `api_key: "old-secret"`, 1)
+	content = strings.Replace(content, `model: ""`, `model: "test-model"`, 1)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	settings, err := LoadSettingsFile(path)
+	if err != nil {
+		t.Fatalf("LoadSettingsFile() error = %v", err)
+	}
+	settings.LLM.APIKey = ""
+	settings.LLM.APIKeyChanged = true
+	if err := SaveSettingsFile(path, settings); err != nil {
+		t.Fatalf("SaveSettingsFile() error = %v", err)
+	}
+
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+	if strings.Contains(string(updated), "old-secret") || !strings.Contains(string(updated), "api_key: \"\"") {
+		t.Fatalf("API Key 未被清空:\n%s", updated)
+	}
+	loadedSettings, err := LoadSettingsFile(path)
+	if err != nil {
+		t.Fatalf("清空后 LoadSettingsFile() error = %v", err)
+	}
+	if loadedSettings.LLM.APIKeyConfigured {
+		t.Fatal("清空 API Key 后仍显示为已配置")
+	}
+	if _, err := LoadFile(path); !errors.Is(err, ErrMissingAPIKey) {
+		t.Fatalf("清空后 LoadFile() error = %v, want ErrMissingAPIKey", err)
 	}
 }
 

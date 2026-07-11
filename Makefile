@@ -116,9 +116,6 @@ package-macos: build-macos ## 生成 macOS .app.zip 和 .dmg
 		ditto --norsrc -c -k --keepParent "$$staging/Floating Translator.app" "$(MACOS_APP_ZIP)"; \
 		hdiutil create -volname "悬浮翻译器" -srcfolder "$$staging" \
 			-ov -format UDZO "$(MACOS_DMG)"
-	@xattr -cr "$(MACOS_APP_DIR)" 2>/dev/null || true
-	@codesign --force --deep --sign - "$(MACOS_APP_DIR)"
-	@codesign --verify --deep --strict "$(MACOS_APP_DIR)"
 
 clean: ## 清理本地构建产物
 	rm -rf build/bin frontend/dist/assets frontend/dist/index.html

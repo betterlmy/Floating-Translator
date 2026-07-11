@@ -329,7 +329,15 @@ func (a *App) translateSelection() {
 		return
 	}
 
-	text, err := a.readSelectedText(cfg)
+	if !a.selectionReadMutex.TryLock() {
+		a.processor.EmitMessage("selection", "划词翻译：上一次选区读取尚未完成，请稍后重试")
+		return
+	}
+	defer a.selectionReadMutex.Unlock()
+	a.processor.BeginSelection()
+	defer a.processor.EndSelection()
+
+	text, err := a.readSelectedTextLocked(cfg)
 	if err != nil {
 		a.logger.Warn("读取选中文本失败", logger.ErrorField(err))
 		message := "划词翻译失败：无法读取当前应用的选中文本"
@@ -342,6 +350,10 @@ func (a *App) translateSelection() {
 			message = fmt.Sprintf("划词翻译失败：选中文本超过 %d 字符", cfg.Clipboard.MaxTextLength)
 		case errors.Is(err, platform.ErrSelectionBusy):
 			message = "划词翻译：上一次选区读取尚未完成，请稍后重试"
+		case errors.Is(err, platform.ErrClipboardUnsafe):
+			message = "划词翻译失败：原剪贴板包含复杂格式，已取消兼容复制以避免覆盖内容"
+		case errors.Is(err, platform.ErrClipboardChangedDuringCopy):
+			message = "划词翻译已取消：兼容复制期间检测到新的剪贴板内容，已保留该内容"
 		case errors.Is(err, context.DeadlineExceeded):
 			message = "划词翻译失败：读取选中文本超时"
 		}
@@ -370,7 +382,10 @@ func (a *App) readSelectedText(cfg config.Config) (string, error) {
 		return "", platform.ErrSelectionBusy
 	}
 	defer a.selectionReadMutex.Unlock()
+	return a.readSelectedTextLocked(cfg)
+}
 
+func (a *App) readSelectedTextLocked(cfg config.Config) (string, error) {
 	directContext, cancelDirect := context.WithTimeout(a.context, 3*time.Second)
 	defer cancelDirect()
 	text, err := a.desktop.SelectedText(directContext, cfg.Clipboard.MaxTextLength+1)
@@ -454,7 +469,7 @@ func (a *App) GetSettings() (config.Settings, error) {
 	return config.LoadSettingsFile(a.paths.ConfigFile)
 }
 
-// SaveSettings 校验并保存设置，成功后立即应用新配置。
+// SaveSettings 校验并保存设置，成功时立即应用；清空 API Key 后进入配置错误状态。
 func (a *App) SaveSettings(settings config.Settings) error {
 	a.configurationMutex.Lock()
 	defer a.configurationMutex.Unlock()
@@ -463,6 +478,10 @@ func (a *App) SaveSettings(settings config.Settings) error {
 	}
 	updatedConfig, err := config.LoadFile(a.paths.ConfigFile)
 	if err != nil {
+		if errors.Is(err, config.ErrMissingAPIKey) {
+			a.setConfigError(err)
+			return nil
+		}
 		return err
 	}
 	if err := a.installConfig(updatedConfig, true); err != nil {

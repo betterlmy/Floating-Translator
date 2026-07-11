@@ -50,14 +50,14 @@ func TestCopyShortcutEvents(t *testing.T) {
 }
 
 func TestGlobalMemoryClipboardFormats(t *testing.T) {
-	for _, format := range []uint32{clipboardFormatUnicodeText, 8, 15, 16, 0xC001} {
-		if !isGlobalMemoryClipboardFormat(format) {
-			t.Fatalf("格式 %d 应按 HGLOBAL 复制", format)
+	for _, format := range []uint32{clipboardFormatText, clipboardFormatOEMText, clipboardFormatUnicodeText, clipboardFormatLocale} {
+		if !isSafeClipboardSnapshotFormat(format) {
+			t.Fatalf("纯文本格式 %d 应允许安全快照", format)
 		}
 	}
-	for _, format := range []uint32{clipboardFormatBitmap, clipboardFormatMetafile, clipboardFormatPalette, clipboardFormatEnhMeta, 0x0201, 0x0301} {
-		if isGlobalMemoryClipboardFormat(format) {
-			t.Fatalf("格式 %d 不应按 HGLOBAL 复制", format)
+	for _, format := range []uint32{8, 15, 17, clipboardFormatBitmap, clipboardFormatMetafile, clipboardFormatPalette, clipboardFormatEnhMeta, 0x0201, 0x0301, 0xC001} {
+		if isSafeClipboardSnapshotFormat(format) {
+			t.Fatalf("格式 %d 不应参与安全纯文本快照", format)
 		}
 	}
 }

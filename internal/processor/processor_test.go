@@ -145,6 +145,57 @@ func TestSelectionTranslationAlwaysEmitsUnchangedText(t *testing.T) {
 	}
 }
 
+func TestClipboardTextDuringSelectionIsProcessedAfterSelection(t *testing.T) {
+	selectionStarted := make(chan struct{})
+	releaseSelection := make(chan struct{})
+	events := make(chan Event, 3)
+	translation := translatorFunc(func(_ context.Context, text string) (translator.Result, error) {
+		switch text {
+		case "selected text":
+			close(selectionStarted)
+			<-releaseSelection
+			return translator.Result{Text: "选区译文", Model: "fake"}, nil
+		case "Second English sentence.":
+			return translator.Result{Text: "剪贴板译文", Model: "fake"}, nil
+		default:
+			return translator.Result{Text: "unexpected", Model: "fake"}, nil
+		}
+	})
+	processor := configuredProcessor(t, translation, events)
+
+	processor.HandleSelection("selected text")
+	waitSignal(t, selectionStarted, "选区翻译未开始")
+	processor.Handle("First English sentence.")
+	processor.Handle("Second English sentence.")
+	close(releaseSelection)
+
+	selectionEvent := waitEvent(t, events)
+	clipboardEvent := waitEvent(t, events)
+	if selectionEvent.Source != "selection" || selectionEvent.Text != "选区译文" {
+		t.Fatalf("selection event = %+v", selectionEvent)
+	}
+	if clipboardEvent.Source != "clipboard" || clipboardEvent.Text != "剪贴板译文" {
+		t.Fatalf("clipboard event = %+v", clipboardEvent)
+	}
+}
+
+func TestClipboardTextDuringSelectionReadIsNotDropped(t *testing.T) {
+	events := make(chan Event, 1)
+	translation := translatorFunc(func(_ context.Context, text string) (translator.Result, error) {
+		return translator.Result{Text: "复制内容译文", Model: "fake"}, nil
+	})
+	processor := configuredProcessor(t, translation, events)
+
+	processor.BeginSelection()
+	processor.Handle("Copy this English text.")
+	processor.EndSelection()
+
+	event := waitEvent(t, events)
+	if event.Source != "clipboard" || event.Text != "复制内容译文" {
+		t.Fatalf("event = %+v", event)
+	}
+}
+
 func TestSelectionTranslationFailureEmitsStatus(t *testing.T) {
 	events := make(chan Event, 1)
 	translation := translatorFunc(func(context.Context, string) (translator.Result, error) {

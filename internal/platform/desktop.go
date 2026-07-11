@@ -24,6 +24,12 @@ var ErrSelectedTextTooLong = errors.New("选中文本超过长度上限")
 // ErrSelectionBusy 表示已有一次选区读取尚未返回，避免阻塞的 UI Automation 调用无限堆积。
 var ErrSelectionBusy = errors.New("选区读取正在进行")
 
+// ErrClipboardUnsafe 表示原剪贴板包含不能安全快照和恢复的复杂格式。
+var ErrClipboardUnsafe = errors.New("原剪贴板包含不支持安全快照的复杂格式")
+
+// ErrClipboardChangedDuringCopy 表示兼容复制期间检测到用户或其他程序更新了剪贴板。
+var ErrClipboardChangedDuringCopy = errors.New("兼容复制期间剪贴板发生并发更新")
+
 // TrayStatus 表示托盘菜单展示的应用状态。
 type TrayStatus string
 

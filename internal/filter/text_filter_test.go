@@ -17,6 +17,10 @@ func TestEvaluate(t *testing.T) {
 	}{
 		{name: "空白", text: " \n\t", wantReason: ReasonEmpty},
 		{name: "英文", text: "This is a clear English sentence.", wantReason: ReasonOK, wantPass: true},
+		{name: "带重音的拉丁文字", text: "Café au lait", wantReason: ReasonNotEnglish},
+		{name: "德语变音文字", text: "Über das Menü", wantReason: ReasonNotEnglish},
+		{name: "纯 ASCII 法语", text: "Bonjour le monde", wantReason: ReasonNotEnglish},
+		{name: "纯 ASCII 西语", text: "Hola mundo", wantReason: ReasonNotEnglish},
 		{name: "中文占比过高", text: "Hello 世界中文", wantReason: ReasonNotEnglish},
 		{name: "纯数字", text: "123456", wantReason: ReasonNotEnglish},
 		{name: "URL", text: "https://example.com/docs?q=test", wantReason: ReasonURL},

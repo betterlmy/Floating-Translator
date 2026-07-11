@@ -40,7 +40,7 @@ func LoadSettingsFile(path string) (Settings, error) {
 	return settingsFromConfig(rawConfig, configured), nil
 }
 
-// SaveSettingsFile 校验并保存完整设置，保留未知字段、注释和未修改的 API Key。
+// SaveSettingsFile 校验并保存完整设置，保留未知字段、注释和未修改的 API Key；允许显式清空 API Key。
 func SaveSettingsFile(path string, settings Settings) error {
 	currentConfig, document, fileMode, err := loadRawConfigDocument(path)
 	if err != nil {
@@ -57,6 +57,11 @@ func SaveSettingsFile(path string, settings Settings) error {
 	validationConfig := updatedConfig
 	validationConfig.LLM.BaseURL = resolveBaseURL(validationConfig.LLM.BaseURL)
 	validationConfig.LLM.APIKey = resolveAPIKey(validationConfig.LLM.APIKey)
+	// 设置页允许用户清空 API Key；保存后应用进入配置错误状态，直到重新配置密钥。
+	// 其他字段仍必须完整校验，避免借清空密钥绕过配置约束。
+	if strings.TrimSpace(validationConfig.LLM.APIKey) == "" {
+		validationConfig.LLM.APIKey = "settings-validation-placeholder"
+	}
 	if err := validationConfig.Validate(); err != nil {
 		return err
 	}

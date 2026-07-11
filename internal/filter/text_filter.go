@@ -46,21 +46,22 @@ type TextFilter struct {
 }
 
 var (
-	skTokenPattern      = regexp.MustCompile(`(?i)\bsk-(?:[a-z0-9_-]+)?`)
-	stripeKeyPattern    = regexp.MustCompile(`\bsk_(?:live|test)_[A-Za-z0-9]*`)
-	awsKeyPattern       = regexp.MustCompile(`\bAKIA[0-9A-Z]*\b`)
-	githubTokenPattern  = regexp.MustCompile(`\b(?:gh[opusr]_\w*|github_pat_[A-Za-z0-9_]*)`)
-	gitlabTokenPattern  = regexp.MustCompile(`\bglpat-[A-Za-z0-9_-]*`)
-	googleAPIKeyPattern = regexp.MustCompile(`\bAIza[0-9A-Za-z_-]*`)
-	slackTokenPattern   = regexp.MustCompile(`\bxox[baprs]-[0-9A-Za-z-]*`)
-	npmTokenPattern     = regexp.MustCompile(`\bnpm_[A-Za-z0-9]*`)
-	pypiTokenPattern    = regexp.MustCompile(`\bpypi-[A-Za-z0-9_-]*`)
-	jwtPattern          = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b`)
-	bearerTokenPattern  = regexp.MustCompile(`(?i)\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/=-]+`)
-	privateKeyPattern   = regexp.MustCompile(`(?i)-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----`)
-	assignmentPattern   = regexp.MustCompile(`(?i)\b(password|passphrase|token|secret|api[_-]?key|access[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|authorization|aws[_-]?(?:access[_-]?key[_-]?id|secret[_-]?access[_-]?key))\s*[:=]\s*(?:Bearer\s+)?[^\s,;]*`)
-	strongCodePattern   = regexp.MustCompile("(?im)(^\\s*```|^\\s*package\\s+main\\b|^\\s*func\\s+main\\s*\\(|^\\s*#include\\b|^\\s*public\\s+static\\s+void\\b|^\\s*import\\s*\\(|^\\s*class\\s+\\w+\\s*\\{|^\\s*(?:const|let|var)\\s+[a-z_$][\\w$]*\\s*=)")
-	weakCodePatterns    = []*regexp.Regexp{
+	skTokenPattern       = regexp.MustCompile(`(?i)\bsk-(?:[a-z0-9_-]+)?`)
+	stripeKeyPattern     = regexp.MustCompile(`\bsk_(?:live|test)_[A-Za-z0-9]*`)
+	awsKeyPattern        = regexp.MustCompile(`\bAKIA[0-9A-Z]*\b`)
+	githubTokenPattern   = regexp.MustCompile(`\b(?:gh[opusr]_\w*|github_pat_[A-Za-z0-9_]*)`)
+	gitlabTokenPattern   = regexp.MustCompile(`\bglpat-[A-Za-z0-9_-]*`)
+	googleAPIKeyPattern  = regexp.MustCompile(`\bAIza[0-9A-Za-z_-]*`)
+	slackTokenPattern    = regexp.MustCompile(`\bxox[baprs]-[0-9A-Za-z-]*`)
+	npmTokenPattern      = regexp.MustCompile(`\bnpm_[A-Za-z0-9]*`)
+	pypiTokenPattern     = regexp.MustCompile(`\bpypi-[A-Za-z0-9_-]*`)
+	jwtPattern           = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b`)
+	bearerTokenPattern   = regexp.MustCompile(`(?i)\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/=-]+`)
+	privateKeyPattern    = regexp.MustCompile(`(?i)-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----`)
+	assignmentPattern    = regexp.MustCompile(`(?i)\b(password|passphrase|token|secret|api[_-]?key|access[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|authorization|aws[_-]?(?:access[_-]?key[_-]?id|secret[_-]?access[_-]?key))\s*[:=]\s*(?:Bearer\s+)?[^\s,;]*`)
+	englishSignalPattern = regexp.MustCompile(`(?i)\b(?:the|and|or|but|this|that|these|those|with|from|into|about|for|not|are|is|was|were|be|been|have|has|had|can|could|will|would|should|you|your|we|they|what|when|where|why|how|please|hello|world|open|read|use|copy|text|document|docs?|readme|translate|translation|language|english|function|return|error|value|test|example|sentence|api|sdk|key|request|response|file|data|code|user|system|model|application|support|version|install|build|run|start|stop|settings|configuration|clipboard|selection|shortcut|content|source|result|process|network|connection|input|output|compatible|deployment|kubernetes|package|main)\b`)
+	strongCodePattern    = regexp.MustCompile("(?im)(^\\s*```|^\\s*package\\s+main\\b|^\\s*func\\s+main\\s*\\(|^\\s*#include\\b|^\\s*public\\s+static\\s+void\\b|^\\s*import\\s*\\(|^\\s*class\\s+\\w+\\s*\\{|^\\s*(?:const|let|var)\\s+[a-z_$][\\w$]*\\s*=)")
+	weakCodePatterns     = []*regexp.Regexp{
 		regexp.MustCompile(`(?m)^\s*(?:func|package|import|class|interface|struct)\s+`),
 		regexp.MustCompile(`=>`),
 		regexp.MustCompile(`(?m)[{};]\s*$`),
@@ -172,8 +173,11 @@ func looksLikeCode(text string) bool {
 	return signals >= 2
 }
 
+// isEnglish 使用 ASCII 英文字母计算比例，并拒绝带重音的其他拉丁文字；
+// 同时要求出现常见英文或技术词，避免把纯 ASCII 的法语、西语等误判为英文。
+// 这是轻量级过滤，不承担完整的自然语言识别。
 func isEnglish(text string, minEnglishRatio float64, maxChineseRatio float64) bool {
-	latinLetters := 0
+	englishLetters := 0
 	hanLetters := 0
 	allLetters := 0
 	for _, r := range text {
@@ -181,8 +185,13 @@ func isEnglish(text string, minEnglishRatio float64, maxChineseRatio float64) bo
 			continue
 		}
 		allLetters++
-		if unicode.In(r, unicode.Latin) {
-			latinLetters++
+		if unicode.In(r, unicode.Latin) && !isASCIIEnglishLetter(r) {
+			// Unicode's Latin script also includes French, German, Spanish and
+			// other languages. Do not classify accented Latin text as English.
+			return false
+		}
+		if isASCIIEnglishLetter(r) {
+			englishLetters++
 		}
 		if unicode.In(r, unicode.Han) {
 			hanLetters++
@@ -191,7 +200,11 @@ func isEnglish(text string, minEnglishRatio float64, maxChineseRatio float64) bo
 	if allLetters == 0 {
 		return false
 	}
-	englishRatio := float64(latinLetters) / float64(allLetters)
+	englishRatio := float64(englishLetters) / float64(allLetters)
 	chineseRatio := float64(hanLetters) / float64(allLetters)
-	return englishRatio >= minEnglishRatio && chineseRatio <= maxChineseRatio
+	return englishRatio >= minEnglishRatio && chineseRatio <= maxChineseRatio && englishSignalPattern.MatchString(text)
+}
+
+func isASCIIEnglishLetter(r rune) bool {
+	return r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z'
 }

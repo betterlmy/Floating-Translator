@@ -32,16 +32,19 @@ type Processor struct {
 	logger      *logger.Logger
 	emit        Emitter
 
-	mutex             sync.Mutex
-	filter            *filter.TextFilter
-	translator        translator.Translator
-	timeout           time.Duration
-	includeSourceText bool
-	enabled           bool
-	sequence          uint64
-	lastObservedHash  string
-	currentCancel     context.CancelFunc
-	currentSource     string
+	mutex               sync.Mutex
+	filter              *filter.TextFilter
+	translator          translator.Translator
+	timeout             time.Duration
+	includeSourceText   bool
+	enabled             bool
+	sequence            uint64
+	lastObservedHash    string
+	pendingClipboard    string
+	pendingClipboardSet bool
+	selectionInProgress bool
+	currentCancel       context.CancelFunc
+	currentSource       string
 }
 
 // New 创建翻译处理器。
@@ -67,6 +70,9 @@ func (p *Processor) Configure(
 	p.includeSourceText = includeSourceText
 	p.enabled = enabled
 	p.lastObservedHash = ""
+	p.pendingClipboard = ""
+	p.pendingClipboardSet = false
+	p.selectionInProgress = false
 }
 
 // SetEnabled 暂停或恢复翻译处理。
@@ -94,12 +100,14 @@ func (p *Processor) Handle(rawText string) {
 		p.logger.Debug("跳过重复剪切板文本", logger.String("reason", string(filter.ReasonDuplicate)), logger.String("text_hash", shortHash(textHash)))
 		return
 	}
-	p.lastObservedHash = textHash
-	if p.currentSource == "selection" {
+	if p.selectionInProgress || p.currentSource == "selection" {
+		p.pendingClipboard = normalizedText
+		p.pendingClipboardSet = true
 		p.mutex.Unlock()
-		p.logger.Debug("划词翻译进行中，跳过剪切板文本", logger.String("text_hash", shortHash(textHash)))
+		p.logger.Debug("划词翻译进行中，延迟处理剪切板文本", logger.String("text_hash", shortHash(textHash)))
 		return
 	}
+	p.lastObservedHash = textHash
 	p.sequence++
 	requestID := p.sequence
 	p.cancelCurrentLocked()
@@ -143,6 +151,36 @@ func (p *Processor) Handle(rawText string) {
 	go p.translate(requestContext, cancel, requestID, textHash, result.Text, textTranslator, "clipboard", false)
 }
 
+// BeginSelection reserves the processor while the platform reads the current
+// selection. Clipboard text arriving during that potentially blocking call is
+// retained and processed after the selection flow finishes.
+func (p *Processor) BeginSelection() {
+	p.mutex.Lock()
+	p.sequence++
+	p.cancelCurrentLocked()
+	p.selectionInProgress = true
+	p.mutex.Unlock()
+}
+
+// EndSelection releases a selection reservation that did not start a model
+// request, and flushes the latest clipboard text captured during the read.
+func (p *Processor) EndSelection() {
+	p.mutex.Lock()
+	if !p.selectionInProgress {
+		p.mutex.Unlock()
+		return
+	}
+	p.selectionInProgress = false
+	pendingText := p.pendingClipboard
+	pendingSet := p.pendingClipboardSet && p.currentSource != "selection"
+	if pendingSet {
+		p.pendingClipboard = ""
+		p.pendingClipboardSet = false
+	}
+	p.mutex.Unlock()
+	p.flushPendingClipboard(pendingText, pendingSet)
+}
+
 // HandleSelection 直接翻译 UI Automation 读取到的选中文本，不经过剪切板过滤规则。
 func (p *Processor) HandleSelection(rawText string) {
 	normalizedText := filter.Normalize(rawText)
@@ -152,12 +190,18 @@ func (p *Processor) HandleSelection(rawText string) {
 	p.sequence++
 	requestID := p.sequence
 	p.cancelCurrentLocked()
+	p.selectionInProgress = false
 	textTranslator := p.translator
 	timeout := p.timeout
 	includeSourceText := p.includeSourceText
 	if textTranslator == nil {
+		pendingText := p.pendingClipboard
+		pendingSet := p.pendingClipboardSet
+		p.pendingClipboard = ""
+		p.pendingClipboardSet = false
 		p.mutex.Unlock()
 		p.EmitMessage("selection", "划词翻译不可用：翻译器尚未完成配置")
+		p.flushPendingClipboard(pendingText, pendingSet)
 		return
 	}
 	requestContext, cancel := context.WithTimeout(p.rootContext, timeout)
@@ -195,6 +239,9 @@ func (p *Processor) Stop() {
 	p.enabled = false
 	p.sequence++
 	p.cancelCurrentLocked()
+	p.pendingClipboard = ""
+	p.pendingClipboardSet = false
+	p.selectionInProgress = false
 }
 
 func (p *Processor) translate(
@@ -215,9 +262,11 @@ func (p *Processor) translate(
 				logger.Any("panic", recovered),
 				logger.String("stack", string(debug.Stack())),
 			)
-			if p.markFailed(requestID, textHash, source) && alwaysEmit {
+			active, pendingText, pendingSet := p.finishRequest(requestID, textHash, source, true)
+			if active && alwaysEmit {
 				p.emitEvent(requestID, "划词翻译失败：翻译任务异常终止", source)
 			}
+			p.flushPendingClipboard(pendingText, pendingSet)
 		}
 	}()
 
@@ -232,29 +281,28 @@ func (p *Processor) translate(
 			logger.String("text_hash", shortHash(textHash)),
 			logger.ErrorField(err),
 		)
-		if p.markFailed(requestID, textHash, source) && alwaysEmit {
+		active, pendingText, pendingSet := p.finishRequest(requestID, textHash, source, true)
+		if active && alwaysEmit {
 			message := "划词翻译失败：请检查模型配置和网络连接"
 			if ctx.Err() == context.DeadlineExceeded {
 				message = "划词翻译超时：请检查网络连接或增大 llm.timeout_seconds"
 			}
 			p.emitEvent(requestID, message, source)
 		}
+		p.flushPendingClipboard(pendingText, pendingSet)
 		return
 	}
 
-	p.mutex.Lock()
-	if requestID != p.sequence || source == "clipboard" && !p.enabled {
-		p.mutex.Unlock()
+	active, pendingText, pendingSet := p.finishRequest(requestID, textHash, source, false)
+	if !active {
 		p.logger.Debug("丢弃迟到的翻译结果", logger.Uint64("request_id", requestID))
 		return
 	}
-	p.currentCancel = nil
-	p.currentSource = ""
-	p.mutex.Unlock()
 
 	if alwaysEmit && filter.Normalize(result.Text) == "" {
 		p.logger.Warn("划词翻译返回空结果", logger.Uint64("request_id", requestID))
 		p.emitEvent(requestID, "划词翻译失败：模型返回了空结果", source)
+		p.flushPendingClipboard(pendingText, pendingSet)
 		return
 	}
 	if !alwaysEmit && filter.Normalize(result.Text) == filter.Normalize(text) {
@@ -262,6 +310,7 @@ func (p *Processor) translate(
 			logger.Uint64("request_id", requestID),
 			logger.String("text_hash", shortHash(textHash)),
 		)
+		p.flushPendingClipboard(pendingText, pendingSet)
 		return
 	}
 
@@ -271,20 +320,34 @@ func (p *Processor) translate(
 		logger.Int64("duration_ms", result.DurationMS),
 	)
 	p.emitEvent(requestID, result.Text, source)
+	p.flushPendingClipboard(pendingText, pendingSet)
 }
 
-func (p *Processor) markFailed(requestID uint64, textHash string, source string) bool {
+func (p *Processor) finishRequest(requestID uint64, textHash string, source string, clearClipboardHash bool) (bool, string, bool) {
 	p.mutex.Lock()
-	defer p.mutex.Unlock()
 	if requestID != p.sequence {
-		return false
+		p.mutex.Unlock()
+		return false, "", false
 	}
 	p.currentCancel = nil
 	p.currentSource = ""
-	if source == "clipboard" && p.lastObservedHash == textHash {
+	if clearClipboardHash && source == "clipboard" && p.lastObservedHash == textHash {
 		p.lastObservedHash = ""
 	}
-	return true
+	pendingText := p.pendingClipboard
+	pendingSet := source == "selection" && p.pendingClipboardSet
+	if pendingSet {
+		p.pendingClipboard = ""
+		p.pendingClipboardSet = false
+	}
+	p.mutex.Unlock()
+	return true, pendingText, pendingSet
+}
+
+func (p *Processor) flushPendingClipboard(text string, pending bool) {
+	if pending {
+		p.Handle(text)
+	}
 }
 
 func (p *Processor) cancelCurrentLocked() {
