@@ -25,6 +25,19 @@ func TestParseNormalizesShortcut(t *testing.T) {
 	}
 }
 
+func TestParseMacShortcut(t *testing.T) {
+	shortcut, err := Parse("Command+Option+T")
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if shortcut.Modifiers != ModifierWin|ModifierAlt || shortcut.VirtualKey != 'T' {
+		t.Fatalf("shortcut = %+v", shortcut)
+	}
+	if shortcut.MacCanonical() != "⌘⌥T" {
+		t.Fatalf("MacCanonical() = %q", shortcut.MacCanonical())
+	}
+}
+
 func TestParseRejectsInvalidShortcut(t *testing.T) {
 	testCases := []string{"T", "Ctrl+", "Ctrl+Alt+T+Y", "Ctrl+Ctrl+T", "Ctrl+Space"}
 	for _, testCase := range testCases {

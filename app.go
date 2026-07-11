@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -311,7 +312,7 @@ func (a *App) applySelectionHotkey(cfg config.SelectionConfig) error {
 	if err := a.desktop.SetSelectionHotkey(&shortcut); err != nil {
 		return err
 	}
-	a.logger.Info("划词翻译快捷键已启用", logger.String("hotkey", shortcut.Canonical))
+	a.logger.Info("划词翻译快捷键已启用", logger.String("hotkey", selectionShortcutLabel(cfg.Hotkey)))
 	return nil
 }
 
@@ -421,6 +422,9 @@ func selectionShortcutLabel(value string) string {
 	shortcut, err := hotkey.Parse(value)
 	if err != nil {
 		return strings.TrimSpace(value)
+	}
+	if runtime.GOOS == "darwin" {
+		return shortcut.MacCanonical()
 	}
 	return shortcut.Canonical
 }

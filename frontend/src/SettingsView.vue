@@ -27,6 +27,12 @@ const fontFamilies = ref<string[]>([])
 let successTimer: number | null = null
 let removeRefreshListener: (() => void) | null = null
 
+const isMacOS = /Macintosh|Mac OS X/.test(navigator.userAgent)
+const hotkeyPlaceholder = isMacOS ? 'Command+Option+T' : 'Ctrl+Alt+T'
+const hotkeyHelp = isMacOS
+  ? '支持 Command(⌘)、Option(⌥)、Shift 加字母、数字或 F1-F24'
+  : '支持 Ctrl、Alt、Shift、Win 加字母、数字或 F1-F24'
+
 const activeMeta = computed(() => sections.find((section) => section.id === activeSection.value) ?? sections[0])
 const apiKeyPlaceholder = computed(() => {
   if (settings.value?.llm.api_key_configured) {
@@ -295,16 +301,16 @@ onBeforeUnmount(() => {
             </label>
             <label class="field field--feature">
               <span class="field-label">全局快捷键</span>
-              <input v-model.trim="settings.selection.hotkey" :disabled="!settings.selection.enable" required placeholder="Ctrl+Alt+T" />
-              <small>支持 Ctrl、Alt、Shift、Win 加字母、数字或 F1-F24</small>
+              <input v-model.trim="settings.selection.hotkey" :disabled="!settings.selection.enable" required :placeholder="hotkeyPlaceholder" />
+              <small>{{ hotkeyHelp }}</small>
             </label>
             <label class="setting-row setting-row--warning">
-              <span><strong>强制兼容</strong><small>仅在原剪贴板全部格式可安全快照时模拟 Ctrl+C 并恢复；否则不会修改剪贴板</small></span>
+              <span><strong>强制兼容</strong><small>仅在原剪贴板全部格式可安全快照时模拟 {{ isMacOS ? 'Command+C' : 'Ctrl+C' }} 并恢复；否则不会修改剪贴板</small></span>
               <input v-model="settings.selection.compatibility_mode" data-testid="selection-compatibility" :disabled="!settings.selection.enable" class="native-toggle" type="checkbox" />
             </label>
             <div class="info-card">
               <span class="info-card__key">HYBRID</span>
-              <div><strong>分层读取选区</strong><p>优先使用 Windows UI Automation 和 Win32；开启强制兼容后，仅在直接读取失败时模拟复制。</p></div>
+              <div><strong>分层读取选区</strong><p>{{ isMacOS ? '优先使用 macOS Accessibility；开启强制兼容后，仅在直接读取失败时模拟复制。' : '优先使用 Windows UI Automation 和 Win32；开启强制兼容后，仅在直接读取失败时模拟复制。' }}</p></div>
             </div>
           </div>
 

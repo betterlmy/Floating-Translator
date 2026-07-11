@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Modifiers 是 Windows RegisterHotKey 使用的修饰键位掩码。
+// Modifiers 是跨平台快捷键修饰键位掩码。ModifierWin 在 macOS 上映射为 Command。
 type Modifiers uint32
 
 const (
@@ -24,7 +24,7 @@ type Shortcut struct {
 	Canonical  string
 }
 
-// Parse 解析 Ctrl+Alt+T 一类快捷键，支持字母、数字和 F1-F24。
+// Parse 解析 Ctrl+Alt+T 或 Command+Option+T 一类快捷键，支持字母、数字和 F1-F24。
 func Parse(value string) (Shortcut, error) {
 	parts := strings.Split(value, "+")
 	if len(parts) < 2 {
@@ -50,14 +50,19 @@ func Parse(value string) (Shortcut, error) {
 				return Shortcut{}, fmt.Errorf("快捷键重复配置 Alt")
 			}
 			modifiers |= ModifierAlt
+		case "OPTION":
+			if modifiers&ModifierAlt != 0 {
+				return Shortcut{}, fmt.Errorf("快捷键重复配置 Alt/Option")
+			}
+			modifiers |= ModifierAlt
 		case "SHIFT":
 			if modifiers&ModifierShift != 0 {
 				return Shortcut{}, fmt.Errorf("快捷键重复配置 Shift")
 			}
 			modifiers |= ModifierShift
-		case "WIN", "SUPER":
+		case "WIN", "SUPER", "CMD", "COMMAND", "META":
 			if modifiers&ModifierWin != 0 {
-				return Shortcut{}, fmt.Errorf("快捷键重复配置 Win")
+				return Shortcut{}, fmt.Errorf("快捷键重复配置 Win/Command")
 			}
 			modifiers |= ModifierWin
 		default:
@@ -94,6 +99,28 @@ func Parse(value string) (Shortcut, error) {
 		VirtualKey: virtualKey,
 		Canonical:  strings.Join(canonicalParts, "+"),
 	}, nil
+}
+
+// MacCanonical returns the native macOS symbol form, for example ⌘⌥T.
+func (shortcut Shortcut) MacCanonical() string {
+	parts := make([]string, 0, 5)
+	if shortcut.Modifiers&ModifierWin != 0 {
+		parts = append(parts, "⌘")
+	}
+	if shortcut.Modifiers&ModifierControl != 0 {
+		parts = append(parts, "⌃")
+	}
+	if shortcut.Modifiers&ModifierAlt != 0 {
+		parts = append(parts, "⌥")
+	}
+	if shortcut.Modifiers&ModifierShift != 0 {
+		parts = append(parts, "⇧")
+	}
+	if shortcut.Canonical != "" {
+		canonicalParts := strings.Split(shortcut.Canonical, "+")
+		parts = append(parts, canonicalParts[len(canonicalParts)-1])
+	}
+	return strings.Join(parts, "")
 }
 
 func parseKey(value string) (uint32, string, error) {

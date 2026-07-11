@@ -30,6 +30,29 @@ static void run_on_main_sync(dispatch_block_t block) {
     dispatch_sync(dispatch_get_main_queue(), block);
 }
 
+int macosRequestAccessibilityPermission(void) {
+    __block int trusted = 0;
+    run_on_main_sync(^{
+        if (AXIsProcessTrusted()) {
+            trusted = 1;
+            return;
+        }
+
+        const void *keys[] = {kAXTrustedCheckOptionPrompt};
+        const void *values[] = {kCFBooleanTrue};
+        CFDictionaryRef options = CFDictionaryCreate(
+            kCFAllocatorDefault,
+            keys,
+            values,
+            1,
+            &kCFTypeDictionaryKeyCallBacks,
+            &kCFTypeDictionaryValueCallBacks);
+        trusted = AXIsProcessTrustedWithOptions(options) ? 1 : 0;
+        CFRelease(options);
+    });
+    return trusted;
+}
+
 static char *copy_utf8_string(NSString *value) {
     if (value == nil) {
         return NULL;

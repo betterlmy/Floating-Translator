@@ -100,6 +100,7 @@ func loadRawConfigDocument(path string) (Config, *yaml.Node, os.FileMode, error)
 	if err := document.Decode(&rawConfig); err != nil {
 		return Config{}, nil, 0, fmt.Errorf("解析配置失败: %w", err)
 	}
+	migrateLegacyPlatformDefaults(&rawConfig)
 	return rawConfig, &document, fileInfo.Mode().Perm(), nil
 }
 

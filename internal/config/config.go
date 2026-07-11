@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"floating-translator/internal/hotkey"
@@ -122,7 +123,7 @@ func Default() Config {
 		},
 		Selection: SelectionConfig{
 			Enable:            true,
-			Hotkey:            "Ctrl+Alt+T",
+			Hotkey:            defaultSelectionHotkey(),
 			CompatibilityMode: false,
 		},
 		LLM: LLMConfig{
@@ -135,7 +136,7 @@ func Default() Config {
 		Subtitle: SubtitleConfig{
 			WidthPercent:        70,
 			BottomOffsetPercent: 4,
-			FontFamily:          "Microsoft YaHei UI",
+			FontFamily:          defaultFontFamily(),
 			FontSize:            28,
 			MaxLines:            4,
 			BackgroundOpacity:   0.38,
@@ -179,10 +180,52 @@ func preparePaths(baseDir string) (Paths, bool, error) {
 	if !errors.Is(err, os.ErrNotExist) {
 		return Paths{}, false, fmt.Errorf("检查配置文件失败: %w", err)
 	}
-	if err := os.WriteFile(paths.ConfigFile, []byte(DefaultTemplate), 0o600); err != nil {
+	if err := os.WriteFile(paths.ConfigFile, []byte(defaultTemplate()), 0o600); err != nil {
 		return Paths{}, false, fmt.Errorf("生成配置模板失败: %w", err)
 	}
 	return paths, true, nil
+}
+
+func defaultSelectionHotkey() string {
+	if runtime.GOOS == "darwin" {
+		return "Command+Option+T"
+	}
+	return "Ctrl+Alt+T"
+}
+
+func defaultFontFamily() string {
+	if runtime.GOOS == "darwin" {
+		return "PingFang SC"
+	}
+	return "Microsoft YaHei UI"
+}
+
+func defaultTemplate() string {
+	if runtime.GOOS != "darwin" {
+		return DefaultTemplate
+	}
+	template := strings.Replace(DefaultTemplate,
+		`hotkey: "Ctrl+Alt+T"`,
+		`hotkey: "Command+Option+T"`,
+		1,
+	)
+	return strings.Replace(template,
+		`font_family: "Microsoft YaHei UI"`,
+		`font_family: "PingFang SC"`,
+		1,
+	)
+}
+
+func migrateLegacyPlatformDefaults(cfg *Config) {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	if cfg.Selection.Hotkey == "Ctrl+Alt+T" {
+		cfg.Selection.Hotkey = defaultSelectionHotkey()
+	}
+	if cfg.Subtitle.FontFamily == "Microsoft YaHei UI" {
+		cfg.Subtitle.FontFamily = defaultFontFamily()
+	}
 }
 
 // LoadFile 从指定路径读取、解析并校验配置。
@@ -196,6 +239,7 @@ func LoadFile(path string) (Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("解析配置失败: %w", err)
 	}
+	migrateLegacyPlatformDefaults(&cfg)
 	cfg.App.LogLevel = strings.ToLower(strings.TrimSpace(cfg.App.LogLevel))
 	cfg.LLM.BaseURL = resolveBaseURL(cfg.LLM.BaseURL)
 	cfg.LLM.APIKey = resolveAPIKey(cfg.LLM.APIKey)

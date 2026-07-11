@@ -12,6 +12,7 @@ void macosStopTray(void);
 void macosSetTrayState(int status, int listening, int selectionEnabled,
                        const char *shortcut);
 void macosSetSelectionHotkey(uint32_t modifiers, uint32_t key, int enabled);
+int macosRequestAccessibilityPermission(void);
 int64_t macosClipboardChangeCount(void);
 char *macosReadClipboard(void);
 void macosFreeString(char *value);
@@ -117,6 +118,9 @@ func (d *darwinDesktop) Start(ctx context.Context, callbacks Callbacks) error {
 	activeDarwinDesktop.Unlock()
 
 	C.macosStartTray()
+	// Ask macOS to show its first-run Accessibility permission prompt. The
+	// selection hotkey and compatibility copy path both depend on this grant.
+	C.macosRequestAccessibilityPermission()
 	go d.monitorClipboard()
 	go func() {
 		<-ctx.Done()

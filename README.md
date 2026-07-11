@@ -5,7 +5,7 @@
 ## 功能
 
 - Windows 使用 `WM_CLIPBOARDUPDATE`，macOS 使用 `NSPasteboard` 轮询监听纯文本剪贴板；
-- 默认使用 `Ctrl+Alt+T` 读取当前选区并直接发给模型；可选强制兼容模式会临时模拟复制，只有在原剪切板的全部格式都能安全快照时才会恢复，无法完整快照则会在模拟复制前终止；
+- Windows 默认使用 `Ctrl+Alt+T`，macOS 默认使用 `Command+Option+T`（⌘⌥T）读取当前选区并直接发给模型；可选强制兼容模式会临时模拟复制，只有在原剪贴板的全部格式都能安全快照时才会恢复，无法完整快照则会在模拟复制前终止；
 - 过滤空白、连续重复、中文、URL、代码、敏感凭据和超长文本；
 - 自动翻译前后文本相同时不显示字幕，划词翻译始终显示结果或明确错误；
 - 使用 Eino 调用 OpenAI-compatible ChatModel；
@@ -20,7 +20,7 @@
 ## 运行要求
 
 - Windows 10 或 Windows 11 x64，以及 Microsoft Edge WebView2 Evergreen Runtime；或 macOS 12+ Apple Silicon；
-- macOS 首次使用划词翻译前，需要在“系统设置 → 隐私与安全性 → 辅助功能”中允许悬浮翻译器。剪贴板监听本身不需要该权限；
+- macOS 首次打开应用时会主动请求“辅助功能”权限；如果系统没有自动打开设置页，请到“系统设置 → 隐私与安全性 → 辅助功能”中允许悬浮翻译器。剪贴板监听本身不需要该权限；
 - Go 1.26.5 或更高版本（发布构建需使用包含最新安全修复的补丁版本）；
 - Node.js 20.19 或更高版本；
 - Wails v3 CLI `v3.0.0-alpha2.117`，开发模式、重新生成前端绑定和 macOS 打包时需要。
@@ -57,9 +57,13 @@ selection:
   hotkey: "Ctrl+Alt+T"
   compatibility_mode: false
 
+# macOS 可改为：hotkey: "Command+Option+T"
+
 subtitle:
   bottom_offset_percent: 4
 ```
+
+macOS 新安装默认使用 `Command+Option+T`；从旧版本升级时，配置中的旧默认 `Ctrl+Alt+T` 会自动迁移为 macOS 快捷键。
 
 `bottom_offset_percent` 表示字幕窗口距离主屏幕工作区底部的高度百分比，可配置范围为 `0` 到 `50`。修改后通过托盘菜单重新加载配置即可生效。
 
@@ -147,4 +151,4 @@ GitHub Actions 会在 push、Pull Request 或手动触发后并行执行 Windows
 
 ## MVP 边界
 
-当前 MVP 只支持英文到简体中文、主屏幕、OpenAI-compatible 接口、Windows x64 便携版和 macOS arm64 DMG。暂不包含安装器自动更新、翻译历史、OCR、多语言、活动屏幕跟随和专用 Ollama 适配器。
+当前 MVP 只支持英文到简体中文、主屏幕、OpenAI-compatible 接口、Windows x64 便携版和 macOS arm64 DMG。macOS 首次启动会请求辅助功能权限。暂不包含安装器自动更新、翻译历史、OCR、多语言、活动屏幕跟随和专用 Ollama 适配器。

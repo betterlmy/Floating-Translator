@@ -106,12 +106,19 @@ build-macos: frontend-build macos-icon ## 构建 macOS arm64 .app
 
 package-macos: build-macos ## 生成 macOS .app.zip 和 .dmg
 	@rm -f "$(MACOS_APP_ZIP)" "$(MACOS_DMG)"
-	@ditto --norsrc -c -k --keepParent "$(MACOS_APP_DIR)" "$(MACOS_APP_ZIP)"
 	@staging="$$(mktemp -d)"; \
+		set -e; \
+		trap 'rm -rf "$$staging"' EXIT; \
 		ditto --norsrc "$(MACOS_APP_DIR)" "$$staging/Floating Translator.app"; \
+		xattr -cr "$$staging/Floating Translator.app" 2>/dev/null || true; \
+		codesign --force --deep --sign - "$$staging/Floating Translator.app"; \
+		codesign --verify --deep --strict "$$staging/Floating Translator.app"; \
+		ditto --norsrc -c -k --keepParent "$$staging/Floating Translator.app" "$(MACOS_APP_ZIP)"; \
 		hdiutil create -volname "悬浮翻译器" -srcfolder "$$staging" \
-			-ov -format UDZO "$(MACOS_DMG)"; \
-		status=$$?; rm -rf "$$staging"; exit $$status
+			-ov -format UDZO "$(MACOS_DMG)"
+	@xattr -cr "$(MACOS_APP_DIR)" 2>/dev/null || true
+	@codesign --force --deep --sign - "$(MACOS_APP_DIR)"
+	@codesign --verify --deep --strict "$(MACOS_APP_DIR)"
 
 clean: ## 清理本地构建产物
 	rm -rf build/bin frontend/dist/assets frontend/dist/index.html

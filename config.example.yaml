@@ -16,6 +16,7 @@ selection:
   enable: true
   hotkey: "Ctrl+Alt+T"
   compatibility_mode: false
+  # macOS 可使用 Command+Option+T
 
 llm:
   provider: "openai_compatible"

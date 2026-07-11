@@ -143,7 +143,11 @@ func TestValidateRejectsUnsupportedLogLevel(t *testing.T) {
 
 func TestDefaultIncludesSelectionAndBottomOffset(t *testing.T) {
 	cfg := Default()
-	if !cfg.Selection.Enable || cfg.Selection.Hotkey != "Ctrl+Alt+T" {
+	wantHotkey := "Ctrl+Alt+T"
+	if runtime.GOOS == "darwin" {
+		wantHotkey = "Command+Option+T"
+	}
+	if !cfg.Selection.Enable || cfg.Selection.Hotkey != wantHotkey {
 		t.Fatalf("Selection = %+v", cfg.Selection)
 	}
 	if cfg.Selection.CompatibilityMode {
@@ -154,6 +158,37 @@ func TestDefaultIncludesSelectionAndBottomOffset(t *testing.T) {
 	}
 	if cfg.LLM.Temperature != nil {
 		t.Fatalf("Temperature = %v, want nil", *cfg.LLM.Temperature)
+	}
+}
+
+func TestLoadFileMigratesLegacyMacDefaults(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS legacy default migration")
+	}
+	cfg := Default()
+	cfg.Selection.Hotkey = "Ctrl+Alt+T"
+	cfg.Subtitle.FontFamily = "Microsoft YaHei UI"
+	cfg.LLM.APIKey = "test-key"
+	cfg.LLM.Model = "test-model"
+	path := writeConfig(t, cfg)
+
+	loaded, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if loaded.Selection.Hotkey != "Command+Option+T" {
+		t.Fatalf("Selection.Hotkey = %q, want Command+Option+T", loaded.Selection.Hotkey)
+	}
+	if loaded.Subtitle.FontFamily != "PingFang SC" {
+		t.Fatalf("Subtitle.FontFamily = %q, want PingFang SC", loaded.Subtitle.FontFamily)
+	}
+
+	settings, err := LoadSettingsFile(path)
+	if err != nil {
+		t.Fatalf("LoadSettingsFile() error = %v", err)
+	}
+	if settings.Selection.Hotkey != "Command+Option+T" {
+		t.Fatalf("settings.Selection.Hotkey = %q, want Command+Option+T", settings.Selection.Hotkey)
 	}
 }
 
