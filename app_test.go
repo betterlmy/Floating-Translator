@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +23,19 @@ type startupDesktop struct {
 	compatibleText          string
 	compatibleTextErr       error
 	compatibleSelectedCalls int
+}
+
+type blockingSelectedDesktop struct {
+	*startupDesktop
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (d *blockingSelectedDesktop) SelectedText(context.Context, int) (string, error) {
+	d.once.Do(func() { close(d.entered) })
+	<-d.release
+	return "selected text", nil
 }
 
 type testApplicationController struct {
@@ -176,6 +190,38 @@ func TestReadSelectedTextDoesNotUseCompatibilityModeWhenDisabled(t *testing.T) {
 	}
 	if desktop.compatibleSelectedCalls != 0 {
 		t.Fatalf("CompatibleSelectedText() 调用次数 = %d, want 0", desktop.compatibleSelectedCalls)
+	}
+}
+
+func TestReadSelectedTextRejectsConcurrentBlockedRead(t *testing.T) {
+	base := &startupDesktop{}
+	desktop := &blockingSelectedDesktop{
+		startupDesktop: base,
+		entered:        make(chan struct{}),
+		release:        make(chan struct{}),
+	}
+	app := NewApp()
+	app.context = context.Background()
+	app.desktop = desktop
+	cfg := config.Default()
+
+	firstResult := make(chan error, 1)
+	go func() {
+		_, err := app.readSelectedText(cfg)
+		firstResult <- err
+	}()
+	select {
+	case <-desktop.entered:
+	case <-time.After(time.Second):
+		t.Fatal("第一次选区读取未开始")
+	}
+
+	if _, err := app.readSelectedText(cfg); !errors.Is(err, platform.ErrSelectionBusy) {
+		t.Fatalf("并发 readSelectedText() error = %v, want ErrSelectionBusy", err)
+	}
+	close(desktop.release)
+	if err := <-firstResult; err != nil {
+		t.Fatalf("第一次 readSelectedText() error = %v", err)
 	}
 }
 

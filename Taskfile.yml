@@ -3,11 +3,5 @@ version: '3'
 tasks:
   build:
     summary: 构建 Windows 悬浮翻译器
-    env:
-      GOOS: windows
-      GOARCH: amd64
-      CGO_ENABLED: '0'
     cmds:
-      - wails3 generate bindings -ts -d frontend/bindings
-      - npm run build --prefix frontend
-      - go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o build/bin/floating-translator.exe .
+      - make build-windows

@@ -21,21 +21,26 @@ import (
 )
 
 const (
-	nativeSubtitleClassName  = "FloatingTranslatorNativeSubtitle"
-	nativeSubtitlePaddingX   = 24
-	nativeSubtitlePaddingY   = 14
-	nativeSubtitleRadius     = 12
-	nativeSubtitleShadowY    = 14
-	nativeSubtitleShadowBlur = 30
+	nativeSubtitleClassName      = "FloatingTranslatorNativeSubtitle"
+	nativeSubtitlePaddingX       = 24
+	nativeSubtitlePaddingY       = 14
+	nativeSubtitleRadius         = 12
+	nativeSubtitleShadowY        = 14
+	nativeSubtitleShadowBlur     = 30
+	nativeSubtitleMaxFailures    = 3
+	nativeSubtitleInitialBackoff = 100 * time.Millisecond
+	nativeSubtitleMaxBackoff     = 2 * time.Second
 )
 
 // nativeSubtitleWindow is a dedicated layered Win32 window. Unlike a WebView
 // window, UpdateLayeredWindow owns every pixel's alpha channel, so the area
 // outside the subtitle card remains genuinely transparent.
 type nativeSubtitleWindow struct {
-	commands chan nativeSubtitleCommand
-	done     chan struct{}
-	close    sync.Once
+	commands            chan nativeSubtitleCommand
+	done                chan struct{}
+	close               sync.Once
+	renderErrorReporter func(error)
+	lastRenderErrorAt   time.Time
 }
 
 type nativeSubtitleCommand struct {
@@ -47,24 +52,27 @@ type nativeSubtitleCommand struct {
 }
 
 type nativeSubtitleState struct {
-	hwnd         w32.HWND
-	bounds       windowBounds
-	config       config.SubtitleConfig
-	text         string
-	requestID    uint64
-	startedAt    time.Time
-	pausedFor    time.Duration
-	hoverStarted time.Time
-	hovering     bool
-	visible      bool
-	lastAlpha    float64
-	card         w32.RECT
+	hwnd           w32.HWND
+	bounds         windowBounds
+	config         config.SubtitleConfig
+	text           string
+	requestID      uint64
+	startedAt      time.Time
+	pausedFor      time.Duration
+	hoverStarted   time.Time
+	hovering       bool
+	visible        bool
+	lastAlpha      float64
+	card           w32.RECT
+	renderFailures int
+	nextRenderAt   time.Time
 }
 
-func newNativeSubtitleWindow() (*nativeSubtitleWindow, error) {
+func newNativeSubtitleWindow(renderErrorReporter func(error)) (*nativeSubtitleWindow, error) {
 	window := &nativeSubtitleWindow{
-		commands: make(chan nativeSubtitleCommand),
-		done:     make(chan struct{}),
+		commands:            make(chan nativeSubtitleCommand),
+		done:                make(chan struct{}),
+		renderErrorReporter: renderErrorReporter,
 	}
 	ready := make(chan error, 1)
 	go window.run(ready)
@@ -132,12 +140,22 @@ func (w *nativeSubtitleWindow) run(ready chan<- error) {
 				return
 			}
 			err := state.apply(command)
+			if err != nil {
+				w.handleRenderError(&state, err)
+			} else {
+				state.clearRenderFailure()
+			}
 			if command.reply != nil {
 				command.reply <- err
 			}
 		case <-ticker.C:
-			if state.visible {
-				_ = state.renderCurrentFrame()
+			now := time.Now()
+			if state.visible && (state.nextRenderAt.IsZero() || !now.Before(state.nextRenderAt)) {
+				if err := state.renderCurrentFrame(); err != nil {
+					w.handleRenderError(&state, err)
+				} else {
+					state.clearRenderFailure()
+				}
 			}
 		}
 		pumpNativeSubtitleMessages()
@@ -163,11 +181,49 @@ func (s *nativeSubtitleState) apply(command nativeSubtitleCommand) error {
 		s.hovering = false
 		s.visible = true
 		s.lastAlpha = -1
+		s.renderFailures = 0
+		s.nextRenderAt = time.Time{}
 	}
 	if s.visible {
 		return s.renderCurrentFrame()
 	}
 	return nil
+}
+
+func (w *nativeSubtitleWindow) handleRenderError(state *nativeSubtitleState, err error) {
+	now := time.Now()
+	if w.renderErrorReporter != nil && (w.lastRenderErrorAt.IsZero() || now.Sub(w.lastRenderErrorAt) >= time.Second) {
+		w.renderErrorReporter(err)
+		w.lastRenderErrorAt = now
+	}
+	state.renderFailures++
+	if state.renderFailures >= nativeSubtitleMaxFailures {
+		state.visible = false
+		state.text = ""
+		state.nextRenderAt = time.Time{}
+		w32.ShowWindow(state.hwnd, w32.SW_HIDE)
+		return
+	}
+	state.nextRenderAt = now.Add(subtitleRenderBackoff(state.renderFailures))
+}
+
+func (s *nativeSubtitleState) clearRenderFailure() {
+	s.renderFailures = 0
+	s.nextRenderAt = time.Time{}
+}
+
+func subtitleRenderBackoff(failures int) time.Duration {
+	if failures <= 0 {
+		return nativeSubtitleInitialBackoff
+	}
+	backoff := nativeSubtitleInitialBackoff
+	for attempt := 1; attempt < failures && backoff < nativeSubtitleMaxBackoff; attempt++ {
+		backoff *= 2
+	}
+	if backoff > nativeSubtitleMaxBackoff {
+		return nativeSubtitleMaxBackoff
+	}
+	return backoff
 }
 
 // Wails reports screen work areas in device-independent pixels. A layered

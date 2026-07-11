@@ -36,7 +36,7 @@ func LoadSettingsFile(path string) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
-	configured := strings.TrimSpace(rawConfig.LLM.APIKey) != "" || strings.TrimSpace(os.Getenv("LLM_API_KEY")) != ""
+	configured := strings.TrimSpace(resolveAPIKey(rawConfig.LLM.APIKey)) != ""
 	return settingsFromConfig(rawConfig, configured), nil
 }
 

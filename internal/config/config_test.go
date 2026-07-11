@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -67,6 +68,54 @@ func TestLoadFileRejectsMissingSecret(t *testing.T) {
 	_, err := LoadFile(path)
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("LoadFile() error = %v, want ErrInvalidConfig", err)
+	}
+}
+
+func TestValidateRejectsNonFiniteAndUnboundedValues(t *testing.T) {
+	base := Default()
+	base.LLM.APIKey = "test-key"
+	base.LLM.Model = "test-model"
+
+	tests := []struct {
+		name  string
+		setup func(*Config)
+	}{
+		{name: "temperature NaN", setup: func(cfg *Config) {
+			value := float32(math.NaN())
+			cfg.LLM.Temperature = &value
+		}},
+		{name: "temperature positive infinity", setup: func(cfg *Config) {
+			value := float32(math.Inf(1))
+			cfg.LLM.Temperature = &value
+		}},
+		{name: "language ratio NaN", setup: func(cfg *Config) {
+			cfg.Clipboard.EnglishMinRatio = math.NaN()
+		}},
+		{name: "timeout too large", setup: func(cfg *Config) {
+			cfg.LLM.TimeoutSeconds = maxTimeoutSeconds + 1
+		}},
+		{name: "text length too large", setup: func(cfg *Config) {
+			cfg.Clipboard.MaxTextLength = maxTextLength + 1
+		}},
+		{name: "animation too large", setup: func(cfg *Config) {
+			cfg.Subtitle.DisplayMS = maxSubtitleAnimation + 1
+		}},
+		{name: "log size too large", setup: func(cfg *Config) {
+			cfg.Logging.MaxSizeMB = maxLogSizeMB + 1
+		}},
+		{name: "log backups too large", setup: func(cfg *Config) {
+			cfg.Logging.MaxBackups = maxLogBackups + 1
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := base
+			test.setup(&cfg)
+			if err := cfg.Validate(); !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("Validate() error = %v, want ErrInvalidConfig", err)
+			}
+		})
 	}
 }
 

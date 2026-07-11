@@ -21,6 +21,9 @@ var ErrNoSelectedText = errors.New("未获取到选中文本")
 // ErrSelectedTextTooLong 表示选区超过配置的安全长度上限。
 var ErrSelectedTextTooLong = errors.New("选中文本超过长度上限")
 
+// ErrSelectionBusy 表示已有一次选区读取尚未返回，避免阻塞的 UI Automation 调用无限堆积。
+var ErrSelectionBusy = errors.New("选区读取正在进行")
+
 // TrayStatus 表示托盘菜单展示的应用状态。
 type TrayStatus string
 

@@ -2,13 +2,15 @@ module floating-translator
 
 go 1.25.0
 
+toolchain go1.26.5
+
 require (
 	github.com/cloudwego/eino v0.9.12
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/go-ole/go-ole v1.3.0
 	github.com/wailsapp/wails/v3 v3.0.0-alpha2.117
 	go.uber.org/zap v1.28.0
-	golang.org/x/sys v0.43.0
+	golang.org/x/sys v0.44.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )

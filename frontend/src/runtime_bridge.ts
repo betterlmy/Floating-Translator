@@ -21,13 +21,13 @@ export const runtimeBridge: RuntimeBridge = {
 		return FrontendReady()
 	},
 	getAvailableFonts(): Promise<string[]> {
-		return GetAvailableFonts() as Promise<string[]>
+		return GetAvailableFonts()
 	},
 	getSettings(): Promise<SettingsData> {
-		return GetSettings() as Promise<SettingsData>
+		return GetSettings()
 	},
 	saveSettings(settings: SettingsData): Promise<void> {
-		return SaveSettings(settings as never)
+		return SaveSettings(settings)
 	},
 	closeSettings(): Promise<void> {
 		return CloseSettings()

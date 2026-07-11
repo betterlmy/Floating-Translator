@@ -38,7 +38,8 @@ const (
 )
 
 var (
-	ole32 = windows.NewLazySystemDLL("ole32.dll")
+	errClipboardChangedDuringRestore = errors.New("剪贴板在恢复前发生变化")
+	ole32                            = windows.NewLazySystemDLL("ole32.dll")
 
 	procSendInput                  = user32.NewProc("SendInput")
 	procGetAsyncKeyState           = user32.NewProc("GetAsyncKeyState")
@@ -101,10 +102,21 @@ func (d *windowsDesktop) CompatibleSelectedText(ctx context.Context, maxLength i
 		return "", err
 	}
 	defer snapshot.release()
+	snapshotSequence := clipboardSequenceNumber()
+	restoreSequence := snapshotSequence
+	copyAttempted := false
 	defer func() {
+		if !copyAttempted || clipboardSequenceNumber() != restoreSequence {
+			d.internalClipboard.Store(false)
+			return
+		}
 		restoreContext, cancelRestore := context.WithTimeout(context.Background(), time.Second)
-		restoreErr := d.restoreClipboard(restoreContext, snapshot)
+		restoreErr := d.restoreClipboard(restoreContext, snapshot, restoreSequence)
 		cancelRestore()
+		if errors.Is(restoreErr, errClipboardChangedDuringRestore) {
+			d.internalClipboard.Store(false)
+			return
+		}
 		d.ignoredClipboardSequence.Store(clipboardSequenceNumber())
 		d.internalClipboard.Store(false)
 		if err == nil && restoreErr != nil {
@@ -116,11 +128,17 @@ func (d *windowsDesktop) CompatibleSelectedText(ctx context.Context, maxLength i
 	if err := waitForModifierKeysReleased(ctx); err != nil {
 		return "", fmt.Errorf("等待划词快捷键释放失败: %w", err)
 	}
-	initialSequence := clipboardSequenceNumber()
+	if clipboardSequenceNumber() != snapshotSequence {
+		return "", errors.New("兼容读取开始前剪贴板已被其他程序更新，已取消操作")
+	}
+	initialSequence := snapshotSequence
 	if err := sendCopyShortcut(); err != nil {
 		return "", err
 	}
-	text, err = d.waitForCopiedText(ctx, initialSequence)
+	copyAttempted = true
+	text, copiedSequence, waitErr := d.waitForCopiedText(ctx, initialSequence)
+	restoreSequence = copiedSequence
+	err = waitErr
 	if err != nil {
 		return "", err
 	}
@@ -177,7 +195,6 @@ func (d *windowsDesktop) snapshotClipboard(ctx context.Context) (*clipboardSnaps
 	defer procCloseClipboard.Call()
 
 	snapshot := &clipboardSnapshot{}
-	availableFormats := 0
 	totalBytes := uintptr(0)
 	for format := uint32(0); ; {
 		nextFormat, _, _ := procEnumClipboardFormats.Call(uintptr(format))
@@ -185,32 +202,34 @@ func (d *windowsDesktop) snapshotClipboard(ctx context.Context) (*clipboardSnaps
 			break
 		}
 		format = uint32(nextFormat)
-		availableFormats++
 		if !isGlobalMemoryClipboardFormat(format) {
-			continue
+			snapshot.release()
+			return nil, fmt.Errorf("保存原剪贴板失败：格式 %d 不支持安全复制", format)
 		}
-		handle, _, _ := procGetClipboardData.Call(uintptr(format))
+		handle, _, callErr := procGetClipboardData.Call(uintptr(format))
 		if handle == 0 {
-			continue
+			snapshot.release()
+			return nil, fmt.Errorf("保存原剪贴板失败：读取格式 %d 失败: %w", format, callErr)
 		}
 		clone, size, cloneErr := cloneGlobalMemory(handle, maxClipboardSnapshotBytes-totalBytes)
 		if cloneErr != nil {
-			continue
+			snapshot.release()
+			return nil, fmt.Errorf("保存原剪贴板失败：复制格式 %d 失败: %w", format, cloneErr)
 		}
 		totalBytes += size
 		snapshot.entries = append(snapshot.entries, clipboardSnapshotEntry{format: format, handle: clone})
 	}
-	if availableFormats > 0 && len(snapshot.entries) == 0 {
-		return nil, errors.New("保存原剪贴板失败：当前剪贴板格式无法安全复制")
-	}
 	return snapshot, nil
 }
 
-func (d *windowsDesktop) restoreClipboard(ctx context.Context, snapshot *clipboardSnapshot) error {
+func (d *windowsDesktop) restoreClipboard(ctx context.Context, snapshot *clipboardSnapshot, expectedSequence uint32) error {
 	if err := d.openClipboard(ctx); err != nil {
 		return fmt.Errorf("打开剪贴板以恢复快照失败: %w", err)
 	}
 	defer procCloseClipboard.Call()
+	if clipboardSequenceNumber() != expectedSequence {
+		return errClipboardChangedDuringRestore
+	}
 	emptied, _, callErr := procEmptyClipboard.Call()
 	if emptied == 0 {
 		return fmt.Errorf("清空临时剪贴板失败: %w", callErr)
@@ -319,19 +338,22 @@ func (snapshot *clipboardSnapshot) release() {
 	}
 }
 
-func (d *windowsDesktop) waitForCopiedText(ctx context.Context, initialSequence uint32) (string, error) {
+func (d *windowsDesktop) waitForCopiedText(ctx context.Context, initialSequence uint32) (string, uint32, error) {
 	ticker := time.NewTicker(clipboardPollInterval)
 	defer ticker.Stop()
 	clipboardChanged := false
+	lastSequence := initialSequence
 	var lastReadErr error
 	for {
-		if !clipboardChanged && clipboardSequenceNumber() != initialSequence {
+		currentSequence := clipboardSequenceNumber()
+		if !clipboardChanged && currentSequence != initialSequence {
 			clipboardChanged = true
 		}
 		if clipboardChanged {
+			lastSequence = currentSequence
 			text, available, readErr := d.readClipboard()
 			if readErr == nil && available && text != "" {
-				return text, nil
+				return text, currentSequence, nil
 			}
 			if readErr != nil {
 				lastReadErr = readErr
@@ -341,9 +363,9 @@ func (d *windowsDesktop) waitForCopiedText(ctx context.Context, initialSequence 
 		select {
 		case <-ctx.Done():
 			if lastReadErr != nil {
-				return "", fmt.Errorf("模拟复制后读取剪贴板失败: %w", lastReadErr)
+				return "", lastSequence, fmt.Errorf("模拟复制后读取剪贴板失败: %w", lastReadErr)
 			}
-			return "", fmt.Errorf("%w：模拟复制后未获取到文本", ErrNoSelectedText)
+			return "", lastSequence, fmt.Errorf("%w：模拟复制后未获取到文本", ErrNoSelectedText)
 		case <-ticker.C:
 		}
 	}

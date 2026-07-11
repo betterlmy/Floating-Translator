@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -16,8 +17,29 @@ type Field = zap.Field
 
 // Logger 是应用统一日志器。
 type Logger struct {
-	base  *zap.Logger
-	level zap.AtomicLevel
+	base   *zap.Logger
+	level  zap.AtomicLevel
+	writer *rotatingWriter
+}
+
+type rotatingWriter struct {
+	mutex  sync.RWMutex
+	logger *lumberjack.Logger
+}
+
+func (w *rotatingWriter) Write(data []byte) (int, error) {
+	w.mutex.RLock()
+	defer w.mutex.RUnlock()
+	return w.logger.Write(data)
+}
+
+func (w *rotatingWriter) Sync() error { return nil }
+
+func (w *rotatingWriter) Reconfigure(maxSizeMB int, maxBackups int) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.logger.MaxSize = maxSizeMB
+	w.logger.MaxBackups = maxBackups
 }
 
 // New 创建写入滚动文件的日志器。
@@ -34,15 +56,15 @@ func New(path string, levelName string, maxSizeMB int, maxBackups int) (*Logger,
 	encoderConfig := zap.NewProductionEncoderConfig()
 	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	encoderConfig.EncodeLevel = zapcore.LowercaseLevelEncoder
-	writer := zapcore.AddSync(&lumberjack.Logger{
+	rotatingWriter := &rotatingWriter{logger: &lumberjack.Logger{
 		Filename:   path,
 		MaxSize:    maxSizeMB,
 		MaxBackups: maxBackups,
 		MaxAge:     7,
 		Compress:   true,
-	})
-	core := zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), writer, atomicLevel)
-	return &Logger{base: zap.New(core, zap.AddCaller()), level: atomicLevel}, nil
+	}}
+	core := zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), zapcore.AddSync(rotatingWriter), atomicLevel)
+	return &Logger{base: zap.New(core, zap.AddCaller()), level: atomicLevel, writer: rotatingWriter}, nil
 }
 
 // NewNop 创建不会输出内容的日志器，供测试和启动降级使用。
@@ -57,6 +79,17 @@ func (l *Logger) SetLevel(levelName string) error {
 		return err
 	}
 	l.level.SetLevel(level)
+	return nil
+}
+
+// Reconfigure 更新日志轮转参数，不需要替换调用方持有的 Logger 指针。
+func (l *Logger) Reconfigure(maxSizeMB int, maxBackups int) error {
+	if maxSizeMB <= 0 || maxBackups < 0 {
+		return fmt.Errorf("无效日志轮转参数: size=%dMB backups=%d", maxSizeMB, maxBackups)
+	}
+	if l.writer != nil {
+		l.writer.Reconfigure(maxSizeMB, maxBackups)
+	}
 	return nil
 }
 

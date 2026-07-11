@@ -39,7 +39,7 @@ func main() {
 	})
 	app.RegisterService(application.NewService(service))
 
-	subtitle, err := newNativeSubtitleWindow()
+	subtitle, err := newNativeSubtitleWindow(service.reportSubtitleRenderError)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "创建字幕窗口失败: %v\n", err)
 		return

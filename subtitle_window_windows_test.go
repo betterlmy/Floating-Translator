@@ -45,3 +45,12 @@ func TestAnimationAlphaExcludesHoveredDuration(t *testing.T) {
 		t.Fatalf("animationAlpha() = (%v, %t), want (1, true)", alpha, visible)
 	}
 }
+
+func TestSubtitleRenderBackoffIsBounded(t *testing.T) {
+	if got := subtitleRenderBackoff(1); got != nativeSubtitleInitialBackoff {
+		t.Fatalf("subtitleRenderBackoff(1) = %s, want %s", got, nativeSubtitleInitialBackoff)
+	}
+	if got := subtitleRenderBackoff(nativeSubtitleMaxFailures + 10); got != nativeSubtitleMaxBackoff {
+		t.Fatalf("subtitleRenderBackoff() = %s, want %s", got, nativeSubtitleMaxBackoff)
+	}
+}

@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -19,6 +20,13 @@ const (
 	ApplicationDirectoryName = "FloatingTranslator"
 	// ConfigFileName 是运行配置文件名。
 	ConfigFileName = "config.yaml"
+
+	maxDebounceMS        = 60_000
+	maxTextLength        = 100_000
+	maxTimeoutSeconds    = 300
+	maxSubtitleAnimation = 60_000
+	maxLogSizeMB         = 1_024
+	maxLogBackups        = 100
 )
 
 // ErrInvalidConfig 表示配置未满足运行要求。
@@ -266,11 +274,11 @@ func (c Config) Validate() error {
 	default:
 		return invalid("app.log_level 仅支持 debug、info、warn、error")
 	}
-	if c.Clipboard.DebounceMS < 0 {
-		return invalid("clipboard.debounce_ms 不能小于 0")
+	if c.Clipboard.DebounceMS < 0 || c.Clipboard.DebounceMS > maxDebounceMS {
+		return invalid(fmt.Sprintf("clipboard.debounce_ms 必须在 0 到 %d 之间", maxDebounceMS))
 	}
-	if c.Clipboard.MaxTextLength <= 0 {
-		return invalid("clipboard.max_text_length 必须大于 0")
+	if c.Clipboard.MaxTextLength <= 0 || c.Clipboard.MaxTextLength > maxTextLength {
+		return invalid(fmt.Sprintf("clipboard.max_text_length 必须在 1 到 %d 之间", maxTextLength))
 	}
 	if !ratioValid(c.Clipboard.EnglishMinRatio) || !ratioValid(c.Clipboard.ChineseMaxRatio) {
 		return invalid("语言比例阈值必须在 0 到 1 之间")
@@ -293,11 +301,11 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.LLM.Model) == "" {
 		return invalid("llm.model 不能为空")
 	}
-	if c.LLM.Temperature != nil && (*c.LLM.Temperature < 0 || *c.LLM.Temperature > 2) {
-		return invalid("llm.temperature 必须在 0 到 2 之间")
+	if c.LLM.Temperature != nil && (math.IsNaN(float64(*c.LLM.Temperature)) || math.IsInf(float64(*c.LLM.Temperature), 0) || *c.LLM.Temperature < 0 || *c.LLM.Temperature > 2) {
+		return invalid("llm.temperature 必须是 0 到 2 之间的有限数值")
 	}
-	if c.LLM.TimeoutSeconds <= 0 {
-		return invalid("llm.timeout_seconds 必须大于 0")
+	if c.LLM.TimeoutSeconds <= 0 || c.LLM.TimeoutSeconds > maxTimeoutSeconds {
+		return invalid(fmt.Sprintf("llm.timeout_seconds 必须在 1 到 %d 之间", maxTimeoutSeconds))
 	}
 	if c.Subtitle.WidthPercent < 20 || c.Subtitle.WidthPercent > 100 {
 		return invalid("subtitle.width_percent 必须在 20 到 100 之间")
@@ -317,11 +325,11 @@ func (c Config) Validate() error {
 	if !ratioValid(c.Subtitle.BackgroundOpacity) {
 		return invalid("subtitle.background_opacity 必须在 0 到 1 之间")
 	}
-	if c.Subtitle.FadeInMS < 0 || c.Subtitle.DisplayMS < 0 || c.Subtitle.FadeOutMS < 0 {
-		return invalid("字幕动画时间不能小于 0")
+	if c.Subtitle.FadeInMS < 0 || c.Subtitle.FadeInMS > maxSubtitleAnimation || c.Subtitle.DisplayMS < 0 || c.Subtitle.DisplayMS > maxSubtitleAnimation || c.Subtitle.FadeOutMS < 0 || c.Subtitle.FadeOutMS > maxSubtitleAnimation {
+		return invalid(fmt.Sprintf("字幕动画时间必须在 0 到 %d 之间", maxSubtitleAnimation))
 	}
-	if c.Logging.MaxSizeMB <= 0 || c.Logging.MaxBackups < 0 {
-		return invalid("日志轮转参数无效")
+	if c.Logging.MaxSizeMB <= 0 || c.Logging.MaxSizeMB > maxLogSizeMB || c.Logging.MaxBackups < 0 || c.Logging.MaxBackups > maxLogBackups {
+		return invalid(fmt.Sprintf("日志轮转参数超出范围：大小 1 到 %d MB，备份数 0 到 %d", maxLogSizeMB, maxLogBackups))
 	}
 	return nil
 }
@@ -341,7 +349,7 @@ func resolveBaseURL(configValue string) string {
 }
 
 func ratioValid(value float64) bool {
-	return value >= 0 && value <= 1
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 1
 }
 
 func invalid(message string) error {

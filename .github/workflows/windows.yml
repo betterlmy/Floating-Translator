@@ -1,0 +1,59 @@
+name: Windows quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.5'
+          check-latest: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Print tool versions
+        shell: pwsh
+        run: |
+          go version
+          node --version
+          npm --version
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Frontend tests
+        run: npm run test --prefix frontend
+
+      - name: Frontend build
+        run: npm run build --prefix frontend
+
+      - name: Go tests
+        run: go test ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Production build
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = '0'
+          go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" ./...
+
+      - name: Vulnerability scan
+        shell: pwsh
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          govulncheck ./...

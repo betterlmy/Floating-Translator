@@ -117,7 +117,11 @@ async function saveSettings(): Promise<void> {
 
 async function closeSettings(): Promise<void> {
   if (!saving.value) {
-    await runtimeBridge.closeSettings()
+    try {
+      await runtimeBridge.closeSettings()
+    } catch (error) {
+      errorMessage.value = `关闭设置失败：${errorText(error)}`
+    }
   }
 }
 
@@ -240,7 +244,7 @@ onBeforeUnmount(() => {
             <div class="field-grid field-grid--two">
               <label class="field">
                 <span class="field-label">请求超时</span>
-                <span class="input-with-unit"><input v-model.number="settings.llm.timeout_seconds" min="1" required type="number" /><b>秒</b></span>
+                <span class="input-with-unit"><input v-model.number="settings.llm.timeout_seconds" max="300" min="1" required type="number" /><b>秒</b></span>
               </label>
               <div class="field">
                 <span class="field-label">采样温度</span>
@@ -269,8 +273,8 @@ onBeforeUnmount(() => {
               <input v-model="settings.clipboard.enable" class="native-toggle" type="checkbox" />
             </label>
             <div class="field-grid field-grid--two">
-              <label class="field"><span class="field-label">防抖时间</span><span class="input-with-unit"><input v-model.number="settings.clipboard.debounce_ms" min="0" type="number" /><b>ms</b></span></label>
-              <label class="field"><span class="field-label">最大文本长度</span><span class="input-with-unit"><input v-model.number="settings.clipboard.max_text_length" min="1" type="number" /><b>字符</b></span></label>
+              <label class="field"><span class="field-label">防抖时间</span><span class="input-with-unit"><input v-model.number="settings.clipboard.debounce_ms" max="60000" min="0" type="number" /><b>ms</b></span></label>
+              <label class="field"><span class="field-label">最大文本长度</span><span class="input-with-unit"><input v-model.number="settings.clipboard.max_text_length" max="100000" min="1" type="number" /><b>字符</b></span></label>
             </div>
             <div class="setting-list">
               <label class="setting-row"><span><strong>跳过 URL</strong><small>整段内容为网页地址时不翻译</small></span><input v-model="settings.clipboard.skip_url" class="native-toggle" type="checkbox" /></label>
@@ -295,7 +299,7 @@ onBeforeUnmount(() => {
               <small>支持 Ctrl、Alt、Shift、Win 加字母、数字或 F1-F24</small>
             </label>
             <label class="setting-row setting-row--warning">
-              <span><strong>强制兼容</strong><small>直接读取失败时模拟 Ctrl+C，并在读取后恢复完整剪贴板</small></span>
+              <span><strong>强制兼容</strong><small>仅在原剪贴板全部格式可安全快照时模拟 Ctrl+C 并恢复；否则不会修改剪贴板</small></span>
               <input v-model="settings.selection.compatibility_mode" data-testid="selection-compatibility" :disabled="!settings.selection.enable" class="native-toggle" type="checkbox" />
             </label>
             <div class="info-card">
@@ -327,9 +331,9 @@ onBeforeUnmount(() => {
               <label class="field"><span class="field-label">背景透明度</span><input v-model.number="settings.subtitle.background_opacity" max="1" min="0" step="0.05" type="number" /></label>
             </div>
             <div class="field-grid field-grid--three">
-              <label class="field"><span class="field-label">淡入</span><span class="input-with-unit"><input v-model.number="settings.subtitle.fade_in_ms" min="0" type="number" /><b>ms</b></span></label>
-              <label class="field"><span class="field-label">停留</span><span class="input-with-unit"><input v-model.number="settings.subtitle.display_ms" min="0" type="number" /><b>ms</b></span></label>
-              <label class="field"><span class="field-label">淡出</span><span class="input-with-unit"><input v-model.number="settings.subtitle.fade_out_ms" min="0" type="number" /><b>ms</b></span></label>
+              <label class="field"><span class="field-label">淡入</span><span class="input-with-unit"><input v-model.number="settings.subtitle.fade_in_ms" max="60000" min="0" type="number" /><b>ms</b></span></label>
+              <label class="field"><span class="field-label">停留</span><span class="input-with-unit"><input v-model.number="settings.subtitle.display_ms" max="60000" min="0" type="number" /><b>ms</b></span></label>
+              <label class="field"><span class="field-label">淡出</span><span class="input-with-unit"><input v-model.number="settings.subtitle.fade_out_ms" max="60000" min="0" type="number" /><b>ms</b></span></label>
             </div>
           </div>
 
@@ -345,8 +349,8 @@ onBeforeUnmount(() => {
               <input v-model="settings.logging.include_source_text" class="native-toggle" type="checkbox" />
             </label>
             <div class="field-grid field-grid--two">
-              <label class="field"><span class="field-label">单个日志上限</span><span class="input-with-unit"><input v-model.number="settings.logging.max_size_mb" min="1" type="number" /><b>MB</b></span></label>
-              <label class="field"><span class="field-label">保留备份数</span><input v-model.number="settings.logging.max_backups" min="0" type="number" /></label>
+              <label class="field"><span class="field-label">单个日志上限</span><span class="input-with-unit"><input v-model.number="settings.logging.max_size_mb" max="1024" min="1" type="number" /><b>MB</b></span></label>
+              <label class="field"><span class="field-label">保留备份数</span><input v-model.number="settings.logging.max_backups" max="100" min="0" type="number" /></label>
             </div>
           </div>
         </form>
@@ -469,6 +473,7 @@ input, select { width: 100%; height: 39px; padding: 0 12px; color: #edf1ec; font
 input:hover, select:hover { border-color: rgba(220,231,226,.3); }
 input:focus, select:focus { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(240,180,75,.08); }
 input:disabled, input[readonly] { color: #77817e; background: #121617; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .input-with-unit { display: grid; grid-template-columns: 1fr auto; align-items: center; background: #0d1112; border: 1px solid var(--line-strong); }
 .input-with-unit:focus-within { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(240,180,75,.08); }
 .input-with-unit input { border: 0; box-shadow: none; }

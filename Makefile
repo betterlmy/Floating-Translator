@@ -3,6 +3,7 @@ SHELL := /bin/sh
 GO ?= go
 NPM ?= npm
 WAILS ?= wails3
+GOVULNCHECK ?= govulncheck
 FRONTEND_DIR ?= frontend
 WINDOWS_GOOS ?= windows
 WINDOWS_GOARCH ?= amd64
@@ -11,7 +12,7 @@ WINDOWS_GOARCH ?= amd64
 
 
 .PHONY: help fmt fmt-check tidy bindings syso frontend-install frontend-test frontend-build \
-	test test-race vet check run build-windows clean
+	test test-race vet vulncheck check run build-windows clean
 
 help: ## 显示可用目标
 	@awk 'BEGIN {FS = ":.*##"; printf "用法: make <目标>\n\n目标:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,7 +35,7 @@ syso: ## 生成 Windows 可执行文件图标和版本资源
 	$(WAILS) generate syso -manifest build/windows/wails.exe.manifest -info build/windows/info.json -icon build/windows/icon.ico -out rsrc_windows_amd64.syso -arch amd64
 
 frontend-install: ## 安装前端依赖
-	$(NPM) install --prefix $(FRONTEND_DIR)
+	$(NPM) ci --prefix $(FRONTEND_DIR)
 
 frontend-test: frontend-install ## 执行前端测试
 	$(NPM) run test --prefix $(FRONTEND_DIR)
@@ -49,9 +50,13 @@ test: ## 执行 Go 和前端测试
 test-race: ## 执行 Go race 检测
 	$(GO) test -race ./...
 
-vet: ## 执行 Go 静态检查（Linux 与 Windows 目标）
+vet: frontend-build ## 执行 Go 静态检查（Linux 与 Windows 目标）
 	$(GO) vet ./...
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) vet ./...
+
+vulncheck: ## 执行 Go 可达漏洞扫描（发布门禁）
+	@command -v $(GOVULNCHECK) >/dev/null 2>&1 || (echo '未找到 $(GOVULNCHECK)，请先安装 govulncheck'; exit 1)
+	$(GOVULNCHECK) ./...
 
 check: fmt-check test-race vet frontend-test frontend-build ## 执行完整质量检查
 	$(NPM) audit --audit-level=high --prefix $(FRONTEND_DIR)

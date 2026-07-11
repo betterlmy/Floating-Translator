@@ -83,10 +83,11 @@ type App struct {
 
 	preparePaths func() (config.Paths, bool, error)
 
-	configValid   bool
-	frontendReady bool
-	listening     bool
-	settingsOpen  bool
+	configValid        bool
+	frontendReady      bool
+	listening          bool
+	settingsOpen       bool
+	selectionReadMutex sync.Mutex
 }
 
 func (a *App) setWindows(app applicationController, subtitle subtitleController, settingsWindow windowController) {
@@ -241,6 +242,9 @@ func (a *App) installConfig(cfg config.Config, applyToFrontend bool) error {
 	if err := a.logger.SetLevel(cfg.App.LogLevel); err != nil {
 		return err
 	}
+	if err := a.logger.Reconfigure(cfg.Logging.MaxSizeMB, cfg.Logging.MaxBackups); err != nil {
+		return err
+	}
 
 	a.mutex.RLock()
 	frontendReady := a.frontendReady
@@ -335,6 +339,8 @@ func (a *App) translateSelection() {
 			message = "划词翻译失败：当前应用不支持读取选中文本"
 		case errors.Is(err, platform.ErrSelectedTextTooLong):
 			message = fmt.Sprintf("划词翻译失败：选中文本超过 %d 字符", cfg.Clipboard.MaxTextLength)
+		case errors.Is(err, platform.ErrSelectionBusy):
+			message = "划词翻译：上一次选区读取尚未完成，请稍后重试"
 		case errors.Is(err, context.DeadlineExceeded):
 			message = "划词翻译失败：读取选中文本超时"
 		}
@@ -359,9 +365,14 @@ func (a *App) translateSelection() {
 }
 
 func (a *App) readSelectedText(cfg config.Config) (string, error) {
+	if !a.selectionReadMutex.TryLock() {
+		return "", platform.ErrSelectionBusy
+	}
+	defer a.selectionReadMutex.Unlock()
+
 	directContext, cancelDirect := context.WithTimeout(a.context, 3*time.Second)
+	defer cancelDirect()
 	text, err := a.desktop.SelectedText(directContext, cfg.Clipboard.MaxTextLength+1)
-	cancelDirect()
 	if err == nil && strings.TrimSpace(text) != "" {
 		return text, nil
 	}
@@ -539,6 +550,10 @@ func (a *App) emitTranslation(event processor.Event) {
 		return
 	}
 	a.subtitle.Display(event)
+}
+
+func (a *App) reportSubtitleRenderError(err error) {
+	a.logger.Warn("原生字幕渲染失败", logger.ErrorField(err))
 }
 
 func (a *App) openPath(path string) {
