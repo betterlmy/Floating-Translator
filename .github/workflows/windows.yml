@@ -133,6 +133,12 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
+      - name: Cross-compile Windows platform tests
+        shell: bash
+        run: |
+          mkdir -p build/bin
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c ./internal/platform -o build/bin/platform-windows.test.exe
+
       - name: Build macOS application
         shell: bash
         run: |

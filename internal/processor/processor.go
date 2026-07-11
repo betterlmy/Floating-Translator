@@ -61,7 +61,7 @@ func (p *Processor) Configure(
 	enabled bool,
 ) {
 	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	selectionTranslationActive := p.currentSource == "selection" && !p.selectionInProgress
 	p.cancelCurrentLocked()
 	p.sequence++
 	p.filter = textFilter
@@ -70,9 +70,24 @@ func (p *Processor) Configure(
 	p.includeSourceText = includeSourceText
 	p.enabled = enabled
 	p.lastObservedHash = ""
-	p.pendingClipboard = ""
-	p.pendingClipboardSet = false
-	p.selectionInProgress = false
+	// Keep selectionInProgress reserved for the native read that is still
+	// running. Its deferred EndSelection call must be able to flush clipboard
+	// text with the newly applied configuration.
+	var pendingText string
+	var pendingSet bool
+	if selectionTranslationActive && p.pendingClipboardSet {
+		// A configuration update cancels an active selection translation, so no
+		// later finishRequest call can flush this pending clipboard text.
+		pendingText = p.pendingClipboard
+		pendingSet = true
+		p.pendingClipboard = ""
+		p.pendingClipboardSet = false
+	}
+	p.mutex.Unlock()
+
+	// Start the deferred clipboard request only after the new configuration is
+	// visible to Handle. A read reservation is released by EndSelection instead.
+	p.flushPendingClipboard(pendingText, pendingSet)
 }
 
 // SetEnabled 暂停或恢复翻译处理。

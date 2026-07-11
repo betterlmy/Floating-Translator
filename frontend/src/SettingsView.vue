@@ -26,6 +26,7 @@ const successMessage = ref('')
 const fontFamilies = ref<string[]>([])
 let successTimer: number | null = null
 let removeRefreshListener: (() => void) | null = null
+let settingsLoadToken = 0
 
 const isMacOS = /Macintosh|Mac OS X/.test(navigator.userAgent)
 const hotkeyPlaceholder = isMacOS ? 'Command+Option+T' : 'Ctrl+Alt+T'
@@ -51,16 +52,25 @@ function errorText(error: unknown): string {
 }
 
 async function loadSettings(): Promise<void> {
+  const loadToken = ++settingsLoadToken
   loading.value = true
   errorMessage.value = ''
   try {
     const loaded = await runtimeBridge.getSettings()
+    if (loadToken !== settingsLoadToken) {
+      return
+    }
     settings.value = loaded
     temperatureEnabled.value = loaded.llm.temperature !== null && loaded.llm.temperature !== undefined
   } catch (error) {
+    if (loadToken !== settingsLoadToken) {
+      return
+    }
     errorMessage.value = `加载设置失败：${errorText(error)}`
   } finally {
-    loading.value = false
+    if (loadToken === settingsLoadToken) {
+      loading.value = false
+    }
   }
 }
 
@@ -157,6 +167,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  settingsLoadToken++
   window.removeEventListener('keydown', handleKeydown)
   removeRefreshListener?.()
   if (successTimer !== null) {

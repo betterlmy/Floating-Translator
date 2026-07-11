@@ -196,6 +196,48 @@ func TestClipboardTextDuringSelectionReadIsNotDropped(t *testing.T) {
 	}
 }
 
+func TestConfigureDuringSelectionReadPreservesPendingClipboard(t *testing.T) {
+	events := make(chan Event, 1)
+	translation := translatorFunc(func(_ context.Context, text string) (translator.Result, error) {
+		return translator.Result{Text: "配置更新后的译文: " + text, Model: "fake"}, nil
+	})
+	processor := configuredProcessor(t, translation, events)
+
+	processor.BeginSelection()
+	processor.Handle("Clipboard text received during selection.")
+	processor.Configure(filter.New(config.Default().Clipboard), translation, time.Second, false, true)
+	processor.EndSelection()
+
+	event := waitEvent(t, events)
+	if event.Source != "clipboard" || event.Text != "配置更新后的译文: Clipboard text received during selection." {
+		t.Fatalf("event = %+v", event)
+	}
+}
+
+func TestConfigureCancelsSelectionAndFlushesPendingClipboard(t *testing.T) {
+	selectionStarted := make(chan struct{})
+	events := make(chan Event, 1)
+	translation := translatorFunc(func(ctx context.Context, text string) (translator.Result, error) {
+		if text == "selected text" {
+			close(selectionStarted)
+			<-ctx.Done()
+			return translator.Result{}, ctx.Err()
+		}
+		return translator.Result{Text: "新配置译文", Model: "fake"}, nil
+	})
+	processor := configuredProcessor(t, translation, events)
+
+	processor.HandleSelection("selected text")
+	waitSignal(t, selectionStarted, "选区翻译未开始")
+	processor.Handle("Clipboard text received during selection.")
+	processor.Configure(filter.New(config.Default().Clipboard), translation, time.Second, false, true)
+
+	event := waitEvent(t, events)
+	if event.Source != "clipboard" || event.Text != "新配置译文" {
+		t.Fatalf("event = %+v", event)
+	}
+}
+
 func TestSelectionTranslationFailureEmitsStatus(t *testing.T) {
 	events := make(chan Event, 1)
 	translation := translatorFunc(func(context.Context, string) (translator.Result, error) {

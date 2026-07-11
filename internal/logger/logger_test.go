@@ -1,7 +1,9 @@
 package logger
 
 import (
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -29,5 +31,17 @@ func TestReconfigureRejectsInvalidValues(t *testing.T) {
 	}
 	if err := log.Reconfigure(1, -1); err == nil {
 		t.Fatal("Reconfigure() should reject negative backups")
+	}
+}
+
+func TestSanitizeErrorRedactsCredentialsURLsAndLength(t *testing.T) {
+	secret := strings.Repeat("x", 700)
+	err := errors.New("request failed https://api.example.com/v1?token=" + secret + " Authorization: Bearer abcdefghijklmnopqrstuvwxyz")
+	message := SanitizeError(err)
+	if strings.Contains(message, secret) || strings.Contains(message, "abcdefghijklmnopqrstuvwxyz") {
+		t.Fatalf("SanitizeError() 泄露了敏感内容: %q", message)
+	}
+	if len([]rune(message)) > maxSanitizedErrorRunes+1 {
+		t.Fatalf("SanitizeError() 结果过长: %d", len([]rune(message)))
 	}
 }

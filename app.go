@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -89,6 +90,7 @@ type App struct {
 	listening          bool
 	settingsOpen       bool
 	selectionReadMutex sync.Mutex
+	initialized        atomic.Bool
 }
 
 func (a *App) setWindows(app applicationController, subtitle subtitleController, settingsWindow windowController) {
@@ -113,6 +115,7 @@ func NewAppWithIcon(icon []byte) *App {
 }
 
 func (a *App) startup(ctx context.Context) {
+	a.initialized.Store(false)
 	a.context = ctx
 	if err := a.desktop.Start(ctx, a.desktopCallbacks()); err != nil {
 		a.logger.Error("启动桌面集成失败", logger.ErrorField(err))
@@ -156,37 +159,40 @@ func (a *App) startup(ctx context.Context) {
 		logger.String("config_path", paths.ConfigFile),
 		logger.String("log_path", paths.LogFile),
 	)
+	// Native tray and hotkey callbacks may start during desktop.Start. Keep
+	// them inert until paths, config, logger, and processor are all ready.
+	a.initialized.Store(true)
 }
 
 func (a *App) desktopCallbacks() platform.Callbacks {
 	return platform.Callbacks{
 		OnClipboardText: func(text string) {
-			a.runSafely("clipboard_text", func() {
+			a.runInitializedSafely("clipboard_text", func() {
 				if a.processor != nil {
 					a.processor.Handle(text)
 				}
 			})
 		},
 		OnSelectionTranslate: func() {
-			a.runSafely("selection_translate", a.translateSelection)
+			a.runInitializedSafely("selection_translate", a.translateSelection)
 		},
 		OnToggleSelection: func() {
-			a.runSafely("toggle_selection", a.toggleSelection)
+			a.runInitializedSafely("toggle_selection", a.toggleSelection)
 		},
 		OnToggleListening: func() {
-			a.runSafely("toggle_listening", a.toggleListening)
+			a.runInitializedSafely("toggle_listening", a.toggleListening)
 		},
 		OnReloadConfig: func() {
-			a.runSafely("reload_config", a.reloadConfig)
+			a.runInitializedSafely("reload_config", a.reloadConfig)
 		},
 		OnOpenSettings: func() {
-			a.runSafely("open_settings", a.showSettings)
+			a.runInitializedSafely("open_settings", a.showSettings)
 		},
 		OnOpenConfig: func() {
-			a.runSafely("open_config", func() { a.openPath(a.paths.ConfigFile) })
+			a.runInitializedSafely("open_config", func() { a.openPath(a.paths.ConfigFile) })
 		},
 		OnOpenLogs: func() {
-			a.runSafely("open_logs", func() { a.openPath(a.paths.LogDir) })
+			a.runInitializedSafely("open_logs", func() { a.openPath(a.paths.LogDir) })
 		},
 		OnQuit: func() {
 			a.runSafely("quit", func() {
@@ -592,6 +598,7 @@ func (a *App) isConfigValid() bool {
 }
 
 func (a *App) shutdown() {
+	a.initialized.Store(false)
 	if a.processor != nil {
 		a.processor.Stop()
 	}
@@ -616,4 +623,11 @@ func (a *App) runSafely(name string, action func()) {
 		}
 	}()
 	action()
+}
+
+func (a *App) runInitializedSafely(name string, action func()) {
+	if !a.initialized.Load() {
+		return
+	}
+	a.runSafely(name, action)
 }

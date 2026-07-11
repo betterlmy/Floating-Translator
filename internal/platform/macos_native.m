@@ -394,36 +394,43 @@ void *macosClipboardSnapshotCreate(void) {
             return;
         }
 
-        NSString *stringType = [pasteboard availableTypeFromArray:@[
-            NSPasteboardTypeString,
-            @"public.utf16-plain-text",
-            @"public.utf16-external-plain-text",
-        ]];
-        if (stringType == nil) {
-            return;
-        }
-        for (NSString *type in types) {
-            if (![type isEqualToString:NSPasteboardTypeString] &&
-                ![type isEqualToString:@"public.utf16-plain-text"] &&
-                ![type isEqualToString:@"public.utf16-external-plain-text"]) {
-                return;
-            }
-        }
+		NSMutableArray *snapshotTypes = [[NSMutableArray alloc] initWithCapacity:types.count];
+		NSMutableArray *snapshotData = [[NSMutableArray alloc] initWithCapacity:types.count];
+		for (NSString *type in types) {
+			if (![type isEqualToString:NSPasteboardTypeString] &&
+				![type isEqualToString:@"public.utf16-plain-text"] &&
+				![type isEqualToString:@"public.utf16-external-plain-text"]) {
+				[snapshotTypes release];
+				[snapshotData release];
+				return;
+			}
+			NSData *value = [pasteboard dataForType:type];
+			if (value == nil) {
+				[snapshotTypes release];
+				[snapshotData release];
+				return;
+			}
+			[snapshotTypes addObject:type];
+			[snapshotData addObject:[[value copy] autorelease]];
+		}
+		if (snapshotTypes.count == 0) {
+			[snapshotTypes release];
+			[snapshotData release];
+			return;
+		}
 
-        NSData *value = [pasteboard dataForType:stringType];
-        if (value == nil) {
-            return;
-        }
-
-        snapshot = (macosClipboardSnapshot *)calloc(1, sizeof(*snapshot));
-        if (snapshot == NULL) {
-            return;
-        }
-        snapshot->types = [[NSArray alloc] initWithObjects:stringType, nil];
-        snapshot->data = [[NSArray alloc] initWithObjects:
-            [[value copy] autorelease], nil];
-        if (snapshot->types == nil || snapshot->data == nil) {
-            [snapshot->types release];
+		snapshot = (macosClipboardSnapshot *)calloc(1, sizeof(*snapshot));
+		if (snapshot == NULL) {
+			[snapshotTypes release];
+			[snapshotData release];
+			return;
+		}
+		snapshot->types = [[NSArray alloc] initWithArray:snapshotTypes];
+		snapshot->data = [[NSArray alloc] initWithArray:snapshotData];
+		[snapshotTypes release];
+		[snapshotData release];
+		if (snapshot->types == nil || snapshot->data == nil) {
+			[snapshot->types release];
             [snapshot->data release];
             free(snapshot);
             snapshot = NULL;

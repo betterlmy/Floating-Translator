@@ -79,6 +79,24 @@ describe('App', () => {
     expect(wrapper.get('[data-testid="subtitle"]').classes()).toContain('subtitle--visible')
   })
 
+  it('旧字幕的异步 continuation 不得覆盖新字幕动画', async () => {
+    const frame = vi.fn((callback: FrameRequestCallback) => {
+      return window.setTimeout(() => callback(0), 0)
+    })
+    vi.stubGlobal('requestAnimationFrame', frame)
+    const wrapper = mount(App)
+    await flushPromises()
+    const emitResult = callbacks.get('translation:result')
+
+    emitResult?.({request_id: 1, text: '旧字幕', source: 'clipboard', timestamp_ms: 1})
+    emitResult?.({request_id: 2, text: '新字幕', source: 'clipboard', timestamp_ms: 2})
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(frame).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain('新字幕')
+    expect(wrapper.text()).not.toContain('旧字幕')
+  })
+
   it('卸载时注销 Wails 事件', async () => {
     const wrapper = mount(App)
     await flushPromises()

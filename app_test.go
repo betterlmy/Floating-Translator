@@ -23,6 +23,8 @@ type startupDesktop struct {
 	compatibleText          string
 	compatibleTextErr       error
 	compatibleSelectedCalls int
+	callbacks               platform.Callbacks
+	openPathCalls           int
 }
 
 type blockingSelectedDesktop struct {
@@ -83,8 +85,9 @@ func (c *testWindowController) Configure(bounds windowBounds, cfg config.Subtitl
 func (c *testWindowController) Display(event processor.Event) { c.translation = event }
 func (c *testWindowController) Close()                        { c.closed = true }
 
-func (d *startupDesktop) Start(context.Context, platform.Callbacks) error {
+func (d *startupDesktop) Start(_ context.Context, callbacks platform.Callbacks) error {
 	*d.events = append(*d.events, "desktop_start")
+	d.callbacks = callbacks
 	d.started = true
 	return nil
 }
@@ -121,7 +124,10 @@ func (d *startupDesktop) ApplyOverlay(platform.OverlayOptions) error { return ni
 
 func (d *startupDesktop) ApplySettingsWindow(platform.WindowOptions) error { return nil }
 
-func (d *startupDesktop) OpenPath(string) error { return nil }
+func (d *startupDesktop) OpenPath(string) error {
+	d.openPathCalls++
+	return nil
+}
 
 func (d *startupDesktop) Stop() error { return nil }
 
@@ -132,6 +138,13 @@ func TestStartupStartsTrayBeforeConfigFailure(t *testing.T) {
 	app.desktop = desktop
 	app.preparePaths = func() (config.Paths, bool, error) {
 		events = append(events, "prepare_paths")
+		// desktop.Start happens before path/config initialization, so every
+		// user callback must be harmless during this window.
+		desktop.callbacks.OnClipboardText("early clipboard text")
+		desktop.callbacks.OnSelectionTranslate()
+		desktop.callbacks.OnReloadConfig()
+		desktop.callbacks.OnOpenConfig()
+		desktop.callbacks.OnOpenLogs()
 		return config.Paths{}, false, errors.New("模拟配置目录错误")
 	}
 
@@ -148,6 +161,9 @@ func TestStartupStartsTrayBeforeConfigFailure(t *testing.T) {
 	}
 	if desktop.listening {
 		t.Fatal("配置失败时不应启用剪切板监听")
+	}
+	if desktop.openPathCalls != 0 {
+		t.Fatalf("初始化完成前不应打开路径，调用次数 = %d", desktop.openPathCalls)
 	}
 	if app.isConfigValid() {
 		t.Fatal("配置失败时不应标记为有效")

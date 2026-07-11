@@ -16,6 +16,14 @@ function settingsFixture(): SettingsData {
   }
 }
 
+function deferred<T>(): {promise: Promise<T>; resolve: (value: T) => void} {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return {promise, resolve}
+}
+
 describe('SettingsView', () => {
   let callbacks: Map<string, () => void>
 
@@ -93,5 +101,29 @@ describe('SettingsView', () => {
     expect((wrapper.get('[data-testid="bottom-offset"]').element as HTMLInputElement).value).toBe('11')
     wrapper.unmount()
     expect(callbacks.has('settings:refresh')).toBe(false)
+  })
+
+  it('并发加载时只接受最后一次配置响应', async () => {
+    const first = deferred<SettingsData>()
+    const second = deferred<SettingsData>()
+    const firstSettings = settingsFixture()
+    const secondSettings = settingsFixture()
+    firstSettings.subtitle.bottom_offset_percent = 3
+    secondSettings.subtitle.bottom_offset_percent = 17
+    const getSettings = vi.spyOn(runtimeBridge, 'getSettings')
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    vi.spyOn(runtimeBridge, 'getAvailableFonts').mockResolvedValue([])
+    const wrapper = mount(SettingsView)
+
+    callbacks.get('settings:refresh')?.()
+    second.resolve(secondSettings)
+    await flushPromises()
+    first.resolve(firstSettings)
+    await flushPromises()
+
+    expect(getSettings).toHaveBeenCalledTimes(2)
+    expect((wrapper.get('[data-testid="bottom-offset"]').element as HTMLInputElement).value).toBe('17')
+    wrapper.unmount()
   })
 })

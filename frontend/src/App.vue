@@ -78,12 +78,16 @@ async function showSubtitle(event: TranslationEvent): Promise<void> {
   if (!event.text || event.request_id < latestRequestID.value) {
     return
   }
-  latestRequestID.value = event.request_id
+  const requestID = event.request_id
+  latestRequestID.value = requestID
   clearAnimation()
   subtitleText.value = event.text
   phase.value = 'entering'
 
   await nextTick()
+  if (requestID !== latestRequestID.value) {
+    return
+  }
   animationFrame = requestAnimationFrame(() => {
     phase.value = 'visible'
     animationFrame = null

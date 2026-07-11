@@ -5,12 +5,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
+
+	"floating-translator/internal/filter"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+const maxSanitizedErrorRunes = 512
+
+var errorURLQueryPattern = regexp.MustCompile(`(?i)(https?://[^\s?]+)\?[^\s]+`)
 
 // Field 是结构化日志字段。
 type Field = zap.Field
@@ -133,8 +141,23 @@ func Uint64(key string, value uint64) Field { return zap.Uint64(key, value) }
 // Bool 创建布尔字段。
 func Bool(key string, value bool) Field { return zap.Bool(key, value) }
 
-// ErrorField 创建错误字段。
-func ErrorField(err error) Field { return zap.Error(err) }
+// ErrorField 创建经过脱敏和长度限制的错误字段。
+func ErrorField(err error) Field { return zap.String("error", SanitizeError(err)) }
+
+// SanitizeError 清理第三方错误中的凭据、URL 查询参数和过长诊断内容。
+func SanitizeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := filter.RedactSensitive(err.Error())
+	message = errorURLQueryPattern.ReplaceAllString(message, "$1?[REDACTED]")
+	message = strings.TrimSpace(message)
+	runes := []rune(message)
+	if len(runes) > maxSanitizedErrorRunes {
+		return string(runes[:maxSanitizedErrorRunes]) + "…"
+	}
+	return message
+}
 
 // Any 创建任意类型字段。
 func Any(key string, value any) Field { return zap.Any(key, value) }
