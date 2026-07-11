@@ -40,7 +40,9 @@ const subtitleConfig = ref<SubtitleConfig>(defaultConfig)
 const subtitleText = ref('')
 const phase = ref<SubtitlePhase>('hidden')
 const latestRequestID = ref(0)
-const isSettingsWindow = new URLSearchParams(window.location.search).get('view') === 'settings'
+const view = new URLSearchParams(window.location.search).get('view')
+const isSettingsWindow = view === 'settings'
+const isSubtitleWindow = view === 'subtitle'
 
 let animationFrame: number | null = null
 let leaveTimer: number | null = null
@@ -112,7 +114,9 @@ onMounted(() => {
     void showSubtitle(event)
   })
   removeConfigListener = runtimeBridge.on<SubtitleConfig>('subtitle:config', updateConfig)
-  void runtimeBridge.ready().catch(() => undefined)
+  if (!isSubtitleWindow) {
+    void runtimeBridge.ready().catch(() => undefined)
+  }
 })
 
 onBeforeUnmount(() => {

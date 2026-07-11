@@ -1,4 +1,4 @@
-name: Windows quality
+name: Desktop quality
 
 on:
   push:
@@ -85,10 +85,85 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
           govulncheck ./...
 
+  macos:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.5'
+          check-latest: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails v3 CLI
+        shell: bash
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.117
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Print tool versions
+        shell: bash
+        run: |
+          go version
+          node --version
+          npm --version
+          wails3 version
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Frontend tests
+        run: npm run test --prefix frontend
+
+      - name: Frontend build
+        run: npm run build --prefix frontend
+
+      - name: Go tests
+        run: go test ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Build macOS application
+        shell: bash
+        run: |
+          version="0.1.0"
+          if [[ "$GITHUB_REF_NAME" == v* ]]; then
+            version="$(echo "$GITHUB_REF_NAME" | sed 's/^v//')"
+          fi
+          make package-macos WAILS=wails3 MACOS_VERSION="$version"
+
+      - name: Upload macOS packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: floating-translator-macos-arm64-${{ github.run_number }}
+          path: |
+            build/bin/floating-translator-macos-arm64.dmg
+            build/bin/floating-translator-macos-arm64.app.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Vulnerability scan
+        shell: bash
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
   publish:
-    name: Publish tagged Windows release
+    name: Publish tagged desktop release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: windows
+    needs:
+      - windows
+      - macos
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -97,19 +172,29 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: floating-translator-windows-amd64-${{ github.run_number }}
-          path: release
+          path: release/windows
 
-      - name: Create or update GitHub release
+      - name: Download macOS packages
+        uses: actions/download-artifact@v4
+        with:
+          name: floating-translator-macos-arm64-${{ github.run_number }}
+          path: release/macos
+
+      - name: Create or update GitHub desktop release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          archive="release/floating-translator-windows-amd64-${TAG_NAME}.zip"
-          executable="release/floating-translator.exe"
+          archive="release/windows/floating-translator-windows-amd64-${TAG_NAME}.zip"
+          executable="release/windows/floating-translator.exe"
+          mac_dmg="release/macos/floating-translator-macos-arm64.dmg"
+          mac_app_zip="release/macos/floating-translator-macos-arm64.app.zip"
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
-            gh release upload "${TAG_NAME}" "${executable}" "${archive}" --clobber
+            gh release upload "${TAG_NAME}" "${executable}" "${archive}" \
+              "${mac_dmg}" "${mac_app_zip}" --clobber
           else
             gh release create "${TAG_NAME}" "${executable}" "${archive}" \
+              "${mac_dmg}" "${mac_app_zip}" \
               --title "Floating Translator ${TAG_NAME}" \
               --generate-notes
           fi

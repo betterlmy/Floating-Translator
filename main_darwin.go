@@ -1,4 +1,4 @@
-//go:build windows
+//go:build darwin
 
 package main
 
@@ -12,18 +12,18 @@ import (
 )
 
 //go:embed all:frontend/dist
-var assets embed.FS
+var darwinAssets embed.FS
 
 //go:embed build/appicon.png
-var applicationIcon []byte
+var darwinApplicationIcon []byte
 
 func main() {
-	service := NewAppWithIcon(applicationIcon)
+	service := NewAppWithIcon(darwinApplicationIcon)
 	app := application.New(application.Options{
 		Name: "悬浮翻译器",
-		Icon: applicationIcon,
+		Icon: darwinApplicationIcon,
 		Assets: application.AssetOptions{
-			Handler: application.BundledAssetFileServer(assets),
+			Handler: application.BundledAssetFileServer(darwinAssets),
 		},
 		OnShutdown: service.shutdown,
 		SingleInstance: &application.SingleInstanceOptions{
@@ -33,12 +33,34 @@ func main() {
 	})
 	app.RegisterService(application.NewService(service))
 
-	subtitle, err := newNativeSubtitleWindow(service.reportSubtitleRenderError)
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "创建字幕窗口失败: %v\n", err)
-		return
-	}
-	defer subtitle.Close()
+	subtitleWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:                       "subtitle",
+		Title:                      subtitleWindowTitle,
+		URL:                        "/?view=subtitle",
+		Width:                      1000,
+		Height:                     300,
+		Frameless:                  true,
+		Hidden:                     true,
+		AlwaysOnTop:                true,
+		IgnoreMouseEvents:          true,
+		BackgroundType:             application.BackgroundTypeTransparent,
+		BackgroundColour:           application.NewRGBA(0, 0, 0, 0),
+		DefaultContextMenuDisabled: true,
+		Mac: application.MacWindow{
+			Backdrop:      application.MacBackdropTransparent,
+			DisableShadow: true,
+			TitleBar: application.MacTitleBar{
+				Hide:               true,
+				AppearsTransparent: true,
+				FullSizeContent:    true,
+			},
+			WindowLevel: application.MacWindowLevelFloating,
+			CollectionBehavior: application.MacWindowCollectionBehaviorCanJoinAllSpaces |
+				application.MacWindowCollectionBehaviorFullScreenAuxiliary,
+		},
+	})
+	subtitle := &darwinSubtitleWindow{window: subtitleWindow}
+
 	settingsWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:                       "settings",
 		Title:                      settingsWindowTitle,
@@ -53,10 +75,17 @@ func main() {
 		AlwaysOnTop:                true,
 		BackgroundColour:           application.NewRGB(16, 20, 22),
 		DefaultContextMenuDisabled: true,
-		Windows: application.WindowsWindow{
-			DisableFramelessWindowDecorations: true,
+		Mac: application.MacWindow{
+			Backdrop: application.MacBackdropNormal,
+			TitleBar: application.MacTitleBar{
+				Hide:               true,
+				AppearsTransparent: true,
+				FullSizeContent:    true,
+			},
+			TabbingMode: application.MacWindowTabbingModeDisallowed,
 		},
 	})
+
 	service.setWindows(
 		&wailsApplicationController{application: app},
 		subtitle,
@@ -69,8 +98,7 @@ func main() {
 		})
 	})
 
-	err = app.Run()
-	if err != nil {
+	if err := app.Run(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "应用启动失败: %v\n", err)
 	}
 }

@@ -1,4 +1,4 @@
-// Package platform 封装 Windows 桌面能力，并提供非 Windows 编译占位实现。
+// Package platform 封装桌面能力，并提供不支持平台的编译占位实现。
 package platform
 
 import (
@@ -10,9 +10,9 @@ import (
 )
 
 // ErrUnsupported 表示当前操作系统不支持桌面集成。
-var ErrUnsupported = errors.New("当前操作系统不支持 Windows 桌面集成")
+var ErrUnsupported = errors.New("当前操作系统不支持桌面集成")
 
-// ErrSelectionUnsupported 表示当前焦点控件不支持 UI Automation 文本选区。
+// ErrSelectionUnsupported 表示当前焦点控件不支持辅助功能文本选区。
 var ErrSelectionUnsupported = errors.New("当前应用不支持读取选中文本")
 
 // ErrNoSelectedText 表示当前没有非空文本选区。
@@ -65,7 +65,7 @@ type WindowOptions struct {
 	Height          int
 }
 
-// Desktop 定义剪切板、托盘和透明窗口能力。
+// Desktop 定义剪贴板、托盘、快捷键和窗口能力。
 type Desktop interface {
 	SetApplicationIcon(icon []byte)
 	Start(ctx context.Context, callbacks Callbacks) error

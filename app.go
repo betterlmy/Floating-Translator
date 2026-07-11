@@ -114,7 +114,7 @@ func NewAppWithIcon(icon []byte) *App {
 func (a *App) startup(ctx context.Context) {
 	a.context = ctx
 	if err := a.desktop.Start(ctx, a.desktopCallbacks()); err != nil {
-		a.logger.Error("启动 Windows 桌面集成失败", logger.ErrorField(err))
+		a.logger.Error("启动桌面集成失败", logger.ErrorField(err))
 	}
 
 	paths, created, err := a.preparePaths()

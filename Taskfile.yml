@@ -2,6 +2,31 @@ version: '3'
 
 tasks:
   build:
-    summary: 构建 Windows 悬浮翻译器
+    summary: 构建当前平台悬浮翻译器
     cmds:
-      - make build-windows
+      - task: "{{.GOOS | default OS}}:build"
+
+  package:
+    summary: 打包当前平台悬浮翻译器
+    cmds:
+      - task: "{{.GOOS | default OS}}:package"
+
+  darwin:build:
+    summary: 构建 macOS 应用
+    cmds:
+      - make build-macos MACOS_GOARCH="{{.GOARCH | default "arm64"}}"
+
+  darwin:package:
+    summary: 生成 macOS .app.zip 和 .dmg
+    cmds:
+      - make package-macos MACOS_GOARCH="{{.GOARCH | default "arm64"}}"
+
+  windows:build:
+    summary: 构建 Windows x64 应用
+    cmds:
+      - make build-windows WINDOWS_GOARCH="{{.GOARCH | default "amd64"}}"
+
+  windows:package:
+    summary: 生成 Windows 可执行文件
+    cmds:
+      - make build-windows WINDOWS_GOARCH="{{.GOARCH | default "amd64"}}"
