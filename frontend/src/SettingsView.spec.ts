@@ -103,6 +103,20 @@ describe('SettingsView', () => {
     expect(callbacks.has('settings:refresh')).toBe(false)
   })
 
+  it('按下键盘组合键录入全局快捷键', async () => {
+    vi.spyOn(runtimeBridge, 'getSettings').mockResolvedValue(settingsFixture())
+    vi.spyOn(runtimeBridge, 'getAvailableFonts').mockResolvedValue([])
+    const wrapper = mount(SettingsView)
+
+    await flushPromises()
+    await wrapper.get('button.nav-item:nth-of-type(3)').trigger('click')
+    const hotkey = wrapper.get('[data-testid="selection-hotkey"]')
+    await hotkey.trigger('keydown', {key: 't', code: 'KeyT', ctrlKey: true, altKey: true})
+
+    expect((hotkey.element as HTMLInputElement).value).toBe('Ctrl+Alt+T')
+    expect(wrapper.text()).toContain('已录入 Ctrl+Alt+T')
+  })
+
   it('并发加载时只接受最后一次配置响应', async () => {
     const first = deferred<SettingsData>()
     const second = deferred<SettingsData>()

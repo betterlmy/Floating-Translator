@@ -24,6 +24,7 @@ const temperatureEnabled = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 const fontFamilies = ref<string[]>([])
+const shortcutCaptureMessage = ref('')
 let successTimer: number | null = null
 let removeRefreshListener: (() => void) | null = null
 let settingsLoadToken = 0
@@ -31,8 +32,8 @@ let settingsLoadToken = 0
 const isMacOS = /Macintosh|Mac OS X/.test(navigator.userAgent)
 const hotkeyPlaceholder = isMacOS ? 'Command+Option+T' : 'Ctrl+Alt+T'
 const hotkeyHelp = isMacOS
-  ? '支持 Command(⌘)、Option(⌥)、Shift 加字母、数字或 F1-F24'
-  : '支持 Ctrl、Alt、Shift、Win 加字母、数字或 F1-F24'
+  ? '点击后直接按下组合键；支持 Command(⌘)、Option(⌥)、Shift 加字母、数字或 F1-F24'
+  : '点击后直接按下组合键；支持 Ctrl、Alt、Shift、Win 加字母、数字或 F1-F24'
 const fontPlatformLabel = isMacOS ? 'macOS' : 'Windows'
 const saveShortcutLabel = isMacOS ? '⌘' : 'Ctrl'
 
@@ -62,6 +63,7 @@ async function loadSettings(): Promise<void> {
     }
     settings.value = loaded
     temperatureEnabled.value = loaded.llm.temperature !== null && loaded.llm.temperature !== undefined
+    shortcutCaptureMessage.value = ''
   } catch (error) {
     if (loadToken !== settingsLoadToken) {
       return
@@ -98,6 +100,72 @@ function toggleTemperature(): void {
   if (!temperatureEnabled.value) {
     settings.value.llm.temperature = null
   }
+}
+
+function shortcutKey(event: KeyboardEvent): string | null {
+  const code = event.code
+  if (/^Key[A-Z]$/.test(code)) {
+    return code.slice(3)
+  }
+  if (/^Digit[0-9]$/.test(code)) {
+    return code.slice(5)
+  }
+  if (/^F(?:[1-9]|1[0-9]|2[0-4])$/.test(code)) {
+    return code
+  }
+
+  const key = event.key.toUpperCase()
+  if (/^[A-Z0-9]$/.test(key)) {
+    return key
+  }
+  if (/^F(?:[1-9]|1[0-9]|2[0-4])$/.test(key)) {
+    return key
+  }
+  return null
+}
+
+function captureShortcut(event: KeyboardEvent): void {
+  if (!settings.value?.selection.enable) {
+    return
+  }
+
+  const key = shortcutKey(event)
+  if (key === null) {
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) {
+      event.preventDefault()
+      shortcutCaptureMessage.value = '继续按下字母、数字或 F1-F24'
+    }
+    return
+  }
+
+  const modifiers: string[] = []
+  if (isMacOS && event.metaKey) {
+    modifiers.push('Command')
+  }
+  if (!isMacOS && event.ctrlKey) {
+    modifiers.push('Ctrl')
+  }
+  if (event.altKey) {
+    modifiers.push(isMacOS ? 'Option' : 'Alt')
+  }
+  if (event.shiftKey) {
+    modifiers.push('Shift')
+  }
+  if (isMacOS && event.ctrlKey) {
+    modifiers.push('Ctrl')
+  }
+  if (!isMacOS && event.metaKey) {
+    modifiers.push('Win')
+  }
+
+  event.preventDefault()
+  if (modifiers.length === 0) {
+    shortcutCaptureMessage.value = '请同时按下至少一个修饰键'
+    return
+  }
+
+  settings.value.selection.hotkey = [...modifiers, key].join('+')
+  shortcutCaptureMessage.value = `已录入 ${settings.value.selection.hotkey}`
 }
 
 async function saveSettings(): Promise<void> {
@@ -316,8 +384,16 @@ onBeforeUnmount(() => {
             </label>
             <label class="field field--feature">
               <span class="field-label">全局快捷键</span>
-              <input v-model.trim="settings.selection.hotkey" :disabled="!settings.selection.enable" required :placeholder="hotkeyPlaceholder" />
-              <small>{{ hotkeyHelp }}</small>
+              <input
+                :value="settings.selection.hotkey"
+                :disabled="!settings.selection.enable"
+                data-testid="selection-hotkey"
+                readonly
+                required
+                :placeholder="hotkeyPlaceholder"
+                @keydown="captureShortcut"
+              />
+              <small>{{ shortcutCaptureMessage || hotkeyHelp }}</small>
             </label>
             <label class="setting-row setting-row--warning">
               <span><strong>强制兼容</strong><small>仅在原剪贴板只有纯文本时模拟 {{ isMacOS ? 'Command+C' : 'Ctrl+C' }} 并恢复；复杂格式或期间出现新的复制内容会取消操作</small></span>
