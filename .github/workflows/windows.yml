@@ -3,6 +3,10 @@ name: Windows quality
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   windows:
@@ -46,11 +50,32 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
-      - name: Production build
+      - name: Build Windows executable
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path build/bin | Out-Null
           $env:CGO_ENABLED = '0'
-          go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" ./...
+          go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o build/bin/floating-translator.exe .
+
+      - name: Package Windows executable
+        id: package
+        shell: pwsh
+        run: |
+          $version = "build-${{ github.run_number }}"
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $version = "${{ github.ref_name }}"
+          }
+          $archive = "floating-translator-windows-amd64-$version.zip"
+          Compress-Archive -Path build/bin/floating-translator.exe -DestinationPath "build/bin/$archive" -CompressionLevel Optimal
+          "archive=$archive" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: floating-translator-windows-amd64-${{ github.run_number }}
+          path: build/bin/${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Vulnerability scan
         shell: pwsh
