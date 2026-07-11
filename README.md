@@ -105,7 +105,7 @@ make build-windows
 build/bin/floating-translator.exe
 ```
 
-GitHub Actions 会在 push、Pull Request 或手动触发后自动执行 Windows x64 构建，并将 `floating-translator-windows-amd64-*.zip` 上传为 workflow artifact。打开 GitHub 仓库的 Actions，进入对应运行记录，在 Artifacts 中下载压缩包即可取得 exe。
+GitHub Actions 会在 push、Pull Request 或手动触发后自动执行 Windows x64 构建，并将 `floating-translator-windows-amd64-*.zip` 上传为 workflow artifact。打开 GitHub 仓库的 Actions，进入对应运行记录，在 Artifacts 中下载压缩包即可取得 exe。推送 `v*` tag（例如 `v1.0.0`）时，workflow 还会自动创建或更新 GitHub Release，并同时附上独立的 `.exe` 和 zip 文件。
 
 运行配置和日志始终位于 `%APPDATA%`，无需在 exe 同目录放置密钥或配置。
 

@@ -73,7 +73,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: floating-translator-windows-amd64-${{ github.run_number }}
-          path: build/bin/${{ steps.package.outputs.archive }}
+          path: |
+            build/bin/floating-translator.exe
+            build/bin/${{ steps.package.outputs.archive }}
           if-no-files-found: error
           retention-days: 14
 
@@ -82,3 +84,32 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
           govulncheck ./...
+
+  publish:
+    name: Publish tagged Windows release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows package
+        uses: actions/download-artifact@v4
+        with:
+          name: floating-translator-windows-amd64-${{ github.run_number }}
+          path: release
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          archive="release/floating-translator-windows-amd64-${TAG_NAME}.zip"
+          executable="release/floating-translator.exe"
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" "${executable}" "${archive}" --clobber
+          else
+            gh release create "${TAG_NAME}" "${executable}" "${archive}" \
+              --title "Floating Translator ${TAG_NAME}" \
+              --generate-notes
+          fi
