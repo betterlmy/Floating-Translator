@@ -5,6 +5,8 @@ NPM ?= npm
 WAILS ?= wails3
 GOVULNCHECK ?= govulncheck
 FRONTEND_DIR ?= frontend
+APP_ICON ?= build/appicon.png
+WINDOWS_ICON ?= build/windows/icon.ico
 WINDOWS_GOOS ?= windows
 WINDOWS_GOARCH ?= amd64
 MACOS_GOOS ?= darwin
@@ -20,7 +22,7 @@ MACOS_VERSION ?= 0.1.0
 .DEFAULT_GOAL := help
 
 
-.PHONY: help fmt fmt-check tidy bindings syso frontend-install frontend-test frontend-build \
+.PHONY: help fmt fmt-check tidy bindings windows-icon syso frontend-install frontend-test frontend-build \
 	test test-race vet vulncheck check run build-windows macos-icon build-macos \
 	package-macos clean
 
@@ -38,11 +40,16 @@ tidy: ## 整理 Go 模块依赖
 
 bindings: ## 使用 Wails v3 CLI 重新生成前端绑定
 	@command -v $(WAILS) >/dev/null 2>&1 || (echo '未找到 $(WAILS)，请先安装 Wails v3 CLI'; exit 1)
-	$(WAILS) generate bindings -ts -d frontend/bindings
+	$(WAILS) generate bindings -ts -f "-tags=bindings" -d frontend/bindings ./...
 
-syso: ## 生成 Windows 可执行文件图标和版本资源
+windows-icon: ## 从主图生成 Windows 多尺寸应用图标
 	@command -v $(WAILS) >/dev/null 2>&1 || (echo '未找到 $(WAILS)，请先安装 Wails v3 CLI'; exit 1)
-	$(WAILS) generate syso -manifest build/windows/wails.exe.manifest -info build/windows/info.json -icon build/windows/icon.ico -out rsrc_windows_amd64.syso -arch amd64
+	@mkdir -p $(dir $(WINDOWS_ICON))
+	$(WAILS) generate icons -input $(APP_ICON) -windowsfilename $(WINDOWS_ICON)
+
+syso: windows-icon ## 生成 Windows 可执行文件图标和版本资源
+	@command -v $(WAILS) >/dev/null 2>&1 || (echo '未找到 $(WAILS)，请先安装 Wails v3 CLI'; exit 1)
+	$(WAILS) generate syso -manifest build/windows/wails.exe.manifest -info build/windows/info.json -icon $(WINDOWS_ICON) -out rsrc_windows_amd64.syso -arch amd64
 
 frontend-install: ## 安装前端依赖
 	$(NPM) ci --prefix $(FRONTEND_DIR)
@@ -83,8 +90,7 @@ build-windows: frontend-build syso ## 使用已有前端产物构建 Windows x64
 macos-icon: ## 生成 macOS 应用图标
 	@command -v $(WAILS) >/dev/null 2>&1 || (echo '未找到 $(WAILS)，请先安装 Wails v3 CLI'; exit 1)
 	@mkdir -p build/bin
-	$(WAILS) generate icons -input build/appicon.png \
-		-macfilename $(MACOS_ICON) -windowsfilename build/bin/floating-translator.ico
+	$(WAILS) generate icons -input $(APP_ICON) -macfilename $(MACOS_ICON)
 
 build-macos: frontend-build macos-icon ## 构建 macOS arm64 .app
 	@mkdir -p build/bin

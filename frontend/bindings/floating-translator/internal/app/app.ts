@@ -12,29 +12,27 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as config$0 from "./internal/config/models.js";
+import * as config$0 from "../config/models.js";
 
 /**
  * CloseSettings 隐藏独立的设置窗口。
  */
 export function CloseSettings(): $CancellablePromise<void> {
-    return $Call.ByID(254067910);
+    return $Call.ByID(128675262);
 }
 
 /**
  * FrontendReady 表示 Vue 字幕组件已完成事件订阅，可以开始监听剪切板。
  */
 export function FrontendReady(): $CancellablePromise<void> {
-    return $Call.ByID(645226692);
+    return $Call.ByID(658294044);
 }
 
 /**
- * GetAvailableFonts returns installed Windows font family names for the
- * settings search control. Registry value names are the family names shown to
- * users, while their values only contain font-file paths and are not exposed.
+ * GetAvailableFonts 返回当前平台可用的字体族名称。
  */
 export function GetAvailableFonts(): $CancellablePromise<string[]> {
-    return $Call.ByID(1394290628).then(($result: any) => {
+    return $Call.ByID(1081289708).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -43,16 +41,30 @@ export function GetAvailableFonts(): $CancellablePromise<string[]> {
  * GetSettings 返回设置窗口需要的完整配置，不包含已有 API Key 明文。
  */
 export function GetSettings(): $CancellablePromise<config$0.Settings> {
-    return $Call.ByID(2554697378).then(($result: any) => {
+    return $Call.ByID(3130280762).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
 /**
- * SaveSettings 校验并保存设置，成功后立即应用新配置。
+ * RenderSubtitlePreview 以当前平台的真实字幕渲染器生成设置页预览图。
+ */
+export function RenderSubtitlePreview(subtitle: config$0.SubtitleConfig, width: number, height: number, deviceScale: number): $CancellablePromise<string> {
+    return $Call.ByID(3873983915, subtitle, width, height, deviceScale);
+}
+
+/**
+ * ReportSubtitleBounds 接收 Vue 测得的字幕文字边界，用于鼠标穿透状态下的原生悬停检测。
+ */
+export function ReportSubtitleBounds(x: number, y: number, width: number, height: number, visible: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3925864098, x, y, width, height, visible);
+}
+
+/**
+ * SaveSettings 校验并保存设置，成功时立即应用；清空 API Key 后进入配置错误状态。
  */
 export function SaveSettings(settings: config$0.Settings): $CancellablePromise<void> {
-    return $Call.ByID(1949631069, settings);
+    return $Call.ByID(2385433637, settings);
 }
 
 // Private type creation functions

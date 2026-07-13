@@ -1,5 +1,9 @@
 # 悬浮翻译器
 
+<p align="center">
+  <img src="build/appicon.png" alt="Floating Translator 图标" width="160">
+</p>
+
 ## 复制英文，屏幕上直接出现中文
 
 悬浮翻译器是一款轻量、低打扰的桌面翻译工具。它会监听你复制的英文内容，调用你配置的模型翻译成简体中文，并把结果显示在屏幕下方的透明字幕窗口中。

@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package fonts
 
 import (
 	"sort"
@@ -11,10 +11,10 @@ import (
 
 const windowsFontsRegistryPath = `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts`
 
-// GetAvailableFonts returns installed Windows font family names for the
+// List 返回 Windows 已安装的字体族名称。
 // settings search control. Registry value names are the family names shown to
 // users, while their values only contain font-file paths and are not exposed.
-func (a *App) GetAvailableFonts() ([]string, error) {
+func List() ([]string, error) {
 	fonts := map[string]struct{}{"Microsoft YaHei UI": {}}
 	var firstError error
 	for _, root := range []registry.Key{registry.LOCAL_MACHINE, registry.CURRENT_USER} {

@@ -22,12 +22,15 @@ const (
 	// ConfigFileName 是运行配置文件名。
 	ConfigFileName = "config.yaml"
 
-	maxDebounceMS        = 60_000
-	maxTextLength        = 100_000
-	maxTimeoutSeconds    = 300
-	maxSubtitleAnimation = 60_000
-	maxLogSizeMB         = 1_024
-	maxLogBackups        = 100
+	maxDebounceMS           = 60_000
+	maxTextLength           = 100_000
+	maxTimeoutSeconds       = 300
+	maxSubtitleAnimation    = 60_000
+	maxSubtitleOutlineWidth = 6
+	maxSubtitleShadowOffset = 24
+	maxSubtitleShadowBlur   = 32
+	maxLogSizeMB            = 1_024
+	maxLogBackups           = 100
 )
 
 var (
@@ -98,6 +101,12 @@ type SubtitleConfig struct {
 	FontSize            int     `yaml:"font_size" json:"font_size"`
 	MaxLines            int     `yaml:"max_lines" json:"max_lines"`
 	BackgroundOpacity   float64 `yaml:"background_opacity" json:"background_opacity"`
+	TextColor           string  `yaml:"text_color" json:"text_color"`
+	OutlineWidth        int     `yaml:"outline_width" json:"outline_width"`
+	OutlineColor        string  `yaml:"outline_color" json:"outline_color"`
+	ShadowOffsetY       int     `yaml:"shadow_offset_y" json:"shadow_offset_y"`
+	ShadowBlur          int     `yaml:"shadow_blur" json:"shadow_blur"`
+	ShadowOpacity       float64 `yaml:"shadow_opacity" json:"shadow_opacity"`
 	FadeInMS            int     `yaml:"fade_in_ms" json:"fade_in_ms"`
 	DisplayMS           int     `yaml:"display_ms" json:"display_ms"`
 	FadeOutMS           int     `yaml:"fade_out_ms" json:"fade_out_ms"`
@@ -144,6 +153,12 @@ func Default() Config {
 			FontSize:            28,
 			MaxLines:            4,
 			BackgroundOpacity:   0.38,
+			TextColor:           "#F8FAFC",
+			OutlineWidth:        1,
+			OutlineColor:        "#000000",
+			ShadowOffsetY:       3,
+			ShadowBlur:          8,
+			ShadowOpacity:       0.88,
 			FadeInMS:            200,
 			DisplayMS:           6000,
 			FadeOutMS:           800,
@@ -373,6 +388,24 @@ func (c Config) Validate() error {
 	if !ratioValid(c.Subtitle.BackgroundOpacity) {
 		return invalid("subtitle.background_opacity 必须在 0 到 1 之间")
 	}
+	if !hexColorValid(c.Subtitle.TextColor) {
+		return invalid("subtitle.text_color 必须是 #RRGGBB 格式")
+	}
+	if c.Subtitle.OutlineWidth < 0 || c.Subtitle.OutlineWidth > maxSubtitleOutlineWidth {
+		return invalid(fmt.Sprintf("subtitle.outline_width 必须在 0 到 %d 之间", maxSubtitleOutlineWidth))
+	}
+	if !hexColorValid(c.Subtitle.OutlineColor) {
+		return invalid("subtitle.outline_color 必须是 #RRGGBB 格式")
+	}
+	if c.Subtitle.ShadowOffsetY < 0 || c.Subtitle.ShadowOffsetY > maxSubtitleShadowOffset {
+		return invalid(fmt.Sprintf("subtitle.shadow_offset_y 必须在 0 到 %d 之间", maxSubtitleShadowOffset))
+	}
+	if c.Subtitle.ShadowBlur < 0 || c.Subtitle.ShadowBlur > maxSubtitleShadowBlur {
+		return invalid(fmt.Sprintf("subtitle.shadow_blur 必须在 0 到 %d 之间", maxSubtitleShadowBlur))
+	}
+	if !ratioValid(c.Subtitle.ShadowOpacity) {
+		return invalid("subtitle.shadow_opacity 必须在 0 到 1 之间")
+	}
 	if c.Subtitle.FadeInMS < 0 || c.Subtitle.FadeInMS > maxSubtitleAnimation || c.Subtitle.DisplayMS < 0 || c.Subtitle.DisplayMS > maxSubtitleAnimation || c.Subtitle.FadeOutMS < 0 || c.Subtitle.FadeOutMS > maxSubtitleAnimation {
 		return invalid(fmt.Sprintf("字幕动画时间必须在 0 到 %d 之间", maxSubtitleAnimation))
 	}
@@ -398,6 +431,19 @@ func resolveBaseURL(configValue string) string {
 
 func ratioValid(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 1
+}
+
+func hexColorValid(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 7 || value[0] != '#' {
+		return false
+	}
+	for _, character := range value[1:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", character) {
+			return false
+		}
+	}
+	return true
 }
 
 func invalid(message string) error {
@@ -439,6 +485,12 @@ subtitle:
   font_size: 28
   max_lines: 4
   background_opacity: 0.38
+  text_color: "#F8FAFC"
+  outline_width: 1
+  outline_color: "#000000"
+  shadow_offset_y: 3
+  shadow_blur: 8
+  shadow_opacity: 0.88
   fade_in_ms: 200
   display_ms: 6000
   fade_out_ms: 800

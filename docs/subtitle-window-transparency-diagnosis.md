@@ -3,8 +3,15 @@
 ## 文档状态
 
 - 记录日期：2026-07-10
-- 当前结论：暂停继续修补 Wails 字幕窗口，后续优先改为独立原生透明字幕窗口
-- 本文只记录诊断结论和建议方案，不代表原生字幕窗口已经实现
+- 更新日期：2026-07-13
+- 当前状态：Windows 使用原生分层窗口渲染；macOS 使用透明 Wails WebView + Vue 渲染
+- 本文保留 Windows WebView 透明失败的诊断过程和回退决策依据
+
+## 2026-07-13 验证结论
+
+Windows 实机验证显示，Wails v3 + WebView2 Composition Hosting 的字幕窗口仍出现白色宿主背景。因此 Windows 已恢复 ` subtitle_window_windows.go ` 的原生 `UpdateLayeredWindow` 渲染；它只绘制文字和文字阴影，窗口其余像素保持透明。macOS 继续使用 Vue/WebView 字幕渲染。
+
+两端保留相同的字幕配置、淡入淡出和悬停语义：悬停时保持完全显示，移开后从完整 `display_ms` 重新计时。
 
 ## 问题现象
 
@@ -20,9 +27,9 @@
 
 这说明问题不在字幕尺寸计算，而在 Wails/WebView2 原生宿主窗口的透明与无边框行为。
 
-## 当前实现链路
+## 已失败的 WebView 实验链路
 
-当前字幕仍是一扇独立的 Wails WebView 窗口：
+以下为导致白底的 Windows Wails WebView 实验实现：
 
 1. ` main.go:38 ` 创建字幕 WebView 窗口；
 2. ` main.go:76 ` 定义字幕窗口参数，包括无边框、透明背景、鼠标穿透和 Composition Hosting；

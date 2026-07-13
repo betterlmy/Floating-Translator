@@ -20,6 +20,7 @@ type Event struct {
 	RequestID   uint64 `json:"request_id"`
 	Text        string `json:"text"`
 	Source      string `json:"source"`
+	Persistent  bool   `json:"persistent"`
 	TimestampMS int64  `json:"timestamp_ms"`
 }
 
@@ -247,6 +248,16 @@ func (p *Processor) EmitMessage(source string, text string) {
 	p.emitEvent(requestID, text, source)
 }
 
+// EmitPendingMessage 发送持续展示的字幕状态，直到后续结果或错误将其覆盖。
+func (p *Processor) EmitPendingMessage(source string, text string) {
+	p.mutex.Lock()
+	p.sequence++
+	requestID := p.sequence
+	p.cancelCurrentLocked()
+	p.mutex.Unlock()
+	p.emitEventWithPersistence(requestID, text, source, true)
+}
+
 // Stop 取消当前请求并禁用处理器。
 func (p *Processor) Stop() {
 	p.mutex.Lock()
@@ -374,6 +385,10 @@ func (p *Processor) cancelCurrentLocked() {
 }
 
 func (p *Processor) emitEvent(requestID uint64, text string, source string) {
+	p.emitEventWithPersistence(requestID, text, source, false)
+}
+
+func (p *Processor) emitEventWithPersistence(requestID uint64, text string, source string, persistent bool) {
 	if p.emit == nil {
 		return
 	}
@@ -381,6 +396,7 @@ func (p *Processor) emitEvent(requestID uint64, text string, source string) {
 		RequestID:   requestID,
 		Text:        text,
 		Source:      source,
+		Persistent:  persistent,
 		TimestampMS: time.Now().UnixMilli(),
 	})
 }

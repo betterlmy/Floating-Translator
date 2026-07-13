@@ -48,9 +48,7 @@ type Callbacks struct {
 	OnSelectionTranslate func()
 	OnToggleSelection    func()
 	OnToggleListening    func()
-	OnReloadConfig       func()
 	OnOpenSettings       func()
-	OnOpenConfig         func()
 	OnOpenLogs           func()
 	OnQuit               func()
 }
@@ -84,6 +82,7 @@ type Desktop interface {
 	CompatibleSelectedText(ctx context.Context, maxLength int) (string, error)
 	ApplyOverlay(options OverlayOptions) error
 	ApplySettingsWindow(options WindowOptions) error
+	CursorPosition() (x int, y int, ok bool)
 	OpenPath(path string) error
 	Stop() error
 }

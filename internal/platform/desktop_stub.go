@@ -40,6 +40,8 @@ func (d *unsupportedDesktop) ApplyOverlay(OverlayOptions) error { return ErrUnsu
 
 func (d *unsupportedDesktop) ApplySettingsWindow(WindowOptions) error { return ErrUnsupported }
 
+func (d *unsupportedDesktop) CursorPosition() (int, int, bool) { return 0, 0, false }
+
 func (d *unsupportedDesktop) OpenPath(string) error { return ErrUnsupported }
 
 func (d *unsupportedDesktop) Stop() error { return nil }

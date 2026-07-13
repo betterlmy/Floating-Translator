@@ -4,22 +4,24 @@
 
 Floating Translator 是一个支持 Windows 10/11 x64 和 macOS 12+ Apple Silicon 的 Wails v3 桌面应用。它监听剪贴板或通过热键读取选中文本，经 OpenAI-compatible 模型翻译后，以无边框、透明、置顶的字幕窗口显示结果。
 
-- Go 后端位于仓库根目录和 `internal/`，负责应用生命周期、配置、平台能力、文本过滤、翻译与调度。
+- 仓库根目录仅保留受支持平台的资源嵌入入口和不支持平台 stub；Go 后端位于 `internal/`，负责应用生命周期、配置、平台能力、文本过滤、翻译与调度。
 - Vue 3 + TypeScript 前端位于 `frontend/`，负责字幕展示与设置界面。
 - Wails 将 Go 服务方法生成到 `frontend/bindings/`，前端通过 `frontend/src/runtime_bridge.ts` 调用；字幕由 Windows 原生分层窗口或 macOS AppKit 透明 Wails WebView 渲染，设置页统一使用 Wails WebView。
 
 ## 目录约定
 
-- `app.go`：应用服务、窗口控制与前后端事件。
-- `main.go`、`main_darwin.go`、`app_wails_windows.go`、`app_wails_darwin.go`：平台启动与窗口配置；`main_stub.go` 支持不支持平台的校验。
+- `main.go`：Windows/macOS 共用的资源嵌入入口；`main_stub.go` 支持不支持平台的校验和测试。
+- `internal/app/`：单一 Wails `App` 服务、生命周期、配置应用、选区/监听协调、窗口控制和双平台启动装配；新增公开服务方法后需要重新生成绑定。
+- `internal/fonts/`：Windows/macOS 字体族枚举及不支持平台 stub。
+- `internal/subtitle/`：字幕控制接口、Windows 原生分层窗口、macOS 透明 Wails WebView 和设置页原生预览。
 - `internal/config/`：YAML 配置、默认值和安全写回。
 - `internal/filter/`：文本规范化、去重与敏感内容过滤。
 - `internal/processor/`：取消旧请求、保证最新请求优先的翻译调度。
-- `internal/platform/`、`internal/hotkey/`：Windows/macOS 桌面、剪贴板、菜单栏/托盘和热键集成；`macos_native.m` 是 Cocoa、Accessibility 和剪贴板桥接。
+- `internal/platform/`、`internal/hotkey/`：Windows/macOS 桌面生命周期、剪贴板、选区读取、窗口、菜单栏/托盘和热键集成；平台文件按能力拆分但保持单一 `platform` package，`macos_native.m` 是 Cocoa、Accessibility 和剪贴板桥接。
 - `internal/logger/`：结构化日志、级别切换和日志轮转配置。
 - `internal/translator/`：Eino/OpenAI-compatible 翻译实现。
 - `frontend/src/`：Vue 组件、样式、运行时桥接和类型。
-- `frontend/bindings/`：Wails 生成代码。除重新生成绑定外不要手动编辑。
+- `frontend/bindings/`：Wails 生成代码，`App` 绑定位于 `frontend/bindings/floating-translator/internal/app/`。除重新生成绑定外不要手动编辑。
 - `.github/workflows/windows.yml`：Windows x64 与 macOS arm64 测试、构建、漏洞扫描和 tag Release 发布门禁。
 - `build/`：图标、平台元数据和打包资源；`build/bin/` 为可删除的本地构建产物。
 
