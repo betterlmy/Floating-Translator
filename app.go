@@ -24,6 +24,7 @@ import (
 const (
 	translationResultEvent = "translation:result"
 	subtitleConfigEvent    = "subtitle:config"
+	subtitleHoverEvent     = "subtitle:hover"
 	settingsRefreshEvent   = "settings:refresh"
 	settingsWindowWidth    = 1080
 	settingsWindowHeight   = 760
@@ -65,6 +66,7 @@ type windowController interface {
 type subtitleController interface {
 	Configure(windowBounds, config.SubtitleConfig) error
 	Display(processor.Event)
+	SetContentBounds(x int, y int, width int, height int, visible bool)
 	Close()
 }
 
@@ -182,14 +184,8 @@ func (a *App) desktopCallbacks() platform.Callbacks {
 		OnToggleListening: func() {
 			a.runInitializedSafely("toggle_listening", a.toggleListening)
 		},
-		OnReloadConfig: func() {
-			a.runInitializedSafely("reload_config", a.reloadConfig)
-		},
 		OnOpenSettings: func() {
 			a.runInitializedSafely("open_settings", a.showSettings)
-		},
-		OnOpenConfig: func() {
-			a.runInitializedSafely("open_config", func() { a.openPath(a.paths.ConfigFile) })
 		},
 		OnOpenLogs: func() {
 			a.runInitializedSafely("open_logs", func() { a.openPath(a.paths.LogDir) })
@@ -224,21 +220,6 @@ func (a *App) FrontendReady() error {
 		a.setListening(listening)
 	}
 	return nil
-}
-
-func (a *App) reloadConfig() {
-	a.configurationMutex.Lock()
-	defer a.configurationMutex.Unlock()
-	cfg, err := config.LoadFile(a.paths.ConfigFile)
-	if err != nil {
-		a.setConfigError(err)
-		return
-	}
-	if err := a.installConfig(cfg, true); err != nil {
-		a.setConfigError(err)
-		return
-	}
-	a.logger.Info("配置重新加载成功")
 }
 
 func (a *App) installConfig(cfg config.Config, applyToFrontend bool) error {
@@ -342,6 +323,7 @@ func (a *App) translateSelection() {
 	defer a.selectionReadMutex.Unlock()
 	a.processor.BeginSelection()
 	defer a.processor.EndSelection()
+	a.processor.EmitPendingMessage("selection", "翻译中...")
 
 	text, err := a.readSelectedTextLocked(cfg)
 	if err != nil {
@@ -496,6 +478,18 @@ func (a *App) SaveSettings(settings config.Settings) error {
 	}
 	a.logger.Info("设置已保存并应用")
 	return nil
+}
+
+// RenderSubtitlePreview 以当前平台的真实字幕渲染器生成设置页预览图。
+func (a *App) RenderSubtitlePreview(subtitle config.SubtitleConfig, width int, height int, deviceScale float64) (string, error) {
+	return renderSubtitlePreview(subtitle, width, height, deviceScale)
+}
+
+// ReportSubtitleBounds 接收 Vue 测得的字幕文字边界，用于鼠标穿透状态下的原生悬停检测。
+func (a *App) ReportSubtitleBounds(x int, y int, width int, height int, visible bool) {
+	if a.subtitle != nil {
+		a.subtitle.SetContentBounds(x, y, width, height, visible)
+	}
 }
 
 // CloseSettings 隐藏独立的设置窗口。

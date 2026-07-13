@@ -5,7 +5,12 @@
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
   --subtitle-font-size: 28px;
-  --subtitle-background-opacity: 0.38;
+  --subtitle-text-color: #f8fafc;
+  --subtitle-outline-width: 1px;
+  --subtitle-outline-color: #000000;
+  --subtitle-shadow-y: 3px;
+  --subtitle-shadow-blur: 8px;
+  --subtitle-shadow-opacity: 0.88;
   --subtitle-fade-in: 200ms;
   --subtitle-fade-out: 800ms;
   --subtitle-width: 100%;
@@ -54,36 +59,16 @@ button {
 
 .subtitle {
   position: relative;
-  width: min(var(--subtitle-width), 100%);
+  width: fit-content;
   max-width: 100%;
-  padding: 14px 24px 15px;
-  overflow: hidden;
-  color: #f8fafc;
+  color: var(--subtitle-text-color);
   text-align: center;
-  background:
-    linear-gradient(180deg, rgba(17, 22, 27, calc(var(--subtitle-background-opacity) + 0.08)), rgba(4, 7, 10, var(--subtitle-background-opacity)));
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 12px;
-  box-shadow:
-    0 14px 48px rgba(0, 0, 0, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   opacity: 0;
   transform: translateY(10px) scale(0.985);
   transform-origin: 50% 80%;
   transition-property: opacity, transform;
   transition-duration: var(--subtitle-fade-in);
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-  backdrop-filter: blur(4px);
-}
-
-.subtitle::before {
-  position: absolute;
-  top: 0;
-  right: 16%;
-  left: 16%;
-  height: 1px;
-  content: '';
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.32), transparent);
 }
 
 .subtitle--visible {
@@ -98,22 +83,25 @@ button {
   transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
 }
 
-.subtitle__text {
-  display: -webkit-box;
+.subtitle__viewport {
+  display: block;
+  max-height: var(--subtitle-viewport-height);
   overflow: hidden;
-  font-family: "Microsoft YaHei UI", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+}
+
+.subtitle__text {
+  display: block;
+  font-family: var(--subtitle-font-family), "Microsoft YaHei UI", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
   font-size: var(--subtitle-font-size);
   font-weight: 550;
   font-variant-east-asian: proportional-width;
   line-height: 1.6;
   letter-spacing: 0.018em;
   text-wrap: balance;
-  text-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.84),
-    0 0 1px rgba(0, 0, 0, 0.9);
+  -webkit-text-stroke: var(--subtitle-outline-width) var(--subtitle-outline-color);
+  text-shadow: 0 var(--subtitle-shadow-y) var(--subtitle-shadow-blur) rgb(0 0 0 / var(--subtitle-shadow-opacity));
   overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: var(--subtitle-max-lines);
+  will-change: transform;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -16,9 +16,7 @@ enum {
     macEventSelectionTranslate = 1,
     macEventToggleSelection = 2,
     macEventToggleListening = 3,
-    macEventReloadConfig = 4,
     macEventOpenSettings = 5,
-    macEventOpenConfig = 6,
     macEventOpenLogs = 7,
     macEventQuit = 8,
 };
@@ -107,6 +105,15 @@ static int configuredHotkeyEnabled = 0;
     goMacEventCallback((int)item.tag);
 }
 
+- (void)statusItemAction:(id)sender {
+    NSEvent *event = [NSApp currentEvent];
+    if (event.type == NSEventTypeRightMouseUp) {
+        [trayStatusItem popUpStatusItemMenu:trayMenu];
+        return;
+    }
+    goMacEventCallback(macEventOpenSettings);
+}
+
 @end
 
 static NSMenuItem *new_tray_menu_item(NSString *title, NSInteger tag) {
@@ -181,12 +188,6 @@ static void create_tray_menu(void) {
     NSMenuItem *settingsItem = new_tray_menu_item(@"设置…", macEventOpenSettings);
     [trayMenu addItem:settingsItem];
     [settingsItem release];
-    NSMenuItem *reloadItem = new_tray_menu_item(@"重新加载配置", macEventReloadConfig);
-    [trayMenu addItem:reloadItem];
-    [reloadItem release];
-    NSMenuItem *configItem = new_tray_menu_item(@"打开配置", macEventOpenConfig);
-    [trayMenu addItem:configItem];
-    [configItem release];
     NSMenuItem *logsItem = new_tray_menu_item(@"打开日志目录", macEventOpenLogs);
     [trayMenu addItem:logsItem];
     [logsItem release];
@@ -211,7 +212,9 @@ void macosStartTray(void) {
         trayStatusItem.button.title = @"翻";
         trayStatusItem.button.toolTip = @"悬浮翻译器";
         create_tray_menu();
-        trayStatusItem.menu = trayMenu;
+        trayStatusItem.button.target = trayController;
+        trayStatusItem.button.action = @selector(statusItemAction:);
+        [trayStatusItem.button sendActionOn:NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp];
     });
 }
 
@@ -577,6 +580,21 @@ char *macosReadSelectedText(void) {
     CFRelease(focused);
     CFRelease(systemWide);
     return result;
+}
+
+int macosCursorPosition(double *x, double *y) {
+    if (x == NULL || y == NULL) {
+        return 0;
+    }
+    CGEventRef event = CGEventCreate(NULL);
+    if (event == NULL) {
+        return 0;
+    }
+    CGPoint location = CGEventGetLocation(event);
+    CFRelease(event);
+    *x = location.x;
+    *y = location.y;
+    return 1;
 }
 
 char *macosAvailableFontFamilies(void) {

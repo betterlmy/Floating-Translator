@@ -103,6 +103,18 @@ func TestValidateRejectsNonFiniteAndUnboundedValues(t *testing.T) {
 		{name: "animation too large", setup: func(cfg *Config) {
 			cfg.Subtitle.DisplayMS = maxSubtitleAnimation + 1
 		}},
+		{name: "invalid subtitle text color", setup: func(cfg *Config) {
+			cfg.Subtitle.TextColor = "red"
+		}},
+		{name: "subtitle outline too wide", setup: func(cfg *Config) {
+			cfg.Subtitle.OutlineWidth = maxSubtitleOutlineWidth + 1
+		}},
+		{name: "subtitle shadow blur too large", setup: func(cfg *Config) {
+			cfg.Subtitle.ShadowBlur = maxSubtitleShadowBlur + 1
+		}},
+		{name: "subtitle shadow opacity NaN", setup: func(cfg *Config) {
+			cfg.Subtitle.ShadowOpacity = math.NaN()
+		}},
 		{name: "log size too large", setup: func(cfg *Config) {
 			cfg.Logging.MaxSizeMB = maxLogSizeMB + 1
 		}},
@@ -161,6 +173,9 @@ func TestDefaultIncludesSelectionAndBottomOffset(t *testing.T) {
 	}
 	if cfg.LLM.Temperature != nil {
 		t.Fatalf("Temperature = %v, want nil", *cfg.LLM.Temperature)
+	}
+	if cfg.Subtitle.TextColor != "#F8FAFC" || cfg.Subtitle.OutlineWidth != 1 || cfg.Subtitle.OutlineColor != "#000000" || cfg.Subtitle.ShadowOffsetY != 3 || cfg.Subtitle.ShadowBlur != 8 || cfg.Subtitle.ShadowOpacity != 0.88 {
+		t.Fatalf("Subtitle appearance defaults = %+v", cfg.Subtitle)
 	}
 }
 

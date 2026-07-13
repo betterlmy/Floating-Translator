@@ -266,6 +266,19 @@ func TestSelectionEmptyTranslationEmitsStatus(t *testing.T) {
 	}
 }
 
+func TestEmitPendingMessagePersistsUntilReplacement(t *testing.T) {
+	events := make(chan Event, 1)
+	processor := configuredProcessor(t, translatorFunc(func(context.Context, string) (translator.Result, error) {
+		return translator.Result{}, nil
+	}), events)
+
+	processor.EmitPendingMessage("selection", "翻译中...")
+	event := waitEvent(t, events)
+	if event.Source != "selection" || event.Text != "翻译中..." || !event.Persistent {
+		t.Fatalf("event = %+v", event)
+	}
+}
+
 func configuredProcessor(t *testing.T, translation translator.Translator, events chan Event) *Processor {
 	t.Helper()
 	processor := New(context.Background(), logger.NewNop(), func(event Event) {

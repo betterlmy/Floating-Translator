@@ -279,6 +279,12 @@ export class SubtitleConfig {
     "font_size": number;
     "max_lines": number;
     "background_opacity": number;
+    "text_color": string;
+    "outline_width": number;
+    "outline_color": string;
+    "shadow_offset_y": number;
+    "shadow_blur": number;
+    "shadow_opacity": number;
     "fade_in_ms": number;
     "display_ms": number;
     "fade_out_ms": number;
@@ -302,6 +308,24 @@ export class SubtitleConfig {
         }
         if (!("background_opacity" in $$source)) {
             this["background_opacity"] = 0;
+        }
+        if (!("text_color" in $$source)) {
+            this["text_color"] = "";
+        }
+        if (!("outline_width" in $$source)) {
+            this["outline_width"] = 0;
+        }
+        if (!("outline_color" in $$source)) {
+            this["outline_color"] = "";
+        }
+        if (!("shadow_offset_y" in $$source)) {
+            this["shadow_offset_y"] = 0;
+        }
+        if (!("shadow_blur" in $$source)) {
+            this["shadow_blur"] = 0;
+        }
+        if (!("shadow_opacity" in $$source)) {
+            this["shadow_opacity"] = 0;
         }
         if (!("fade_in_ms" in $$source)) {
             this["fade_in_ms"] = 0;

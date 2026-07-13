@@ -27,7 +27,9 @@ const (
 	windowMessageCommand       = 0x0111
 	windowMessageDestroy       = 0x0002
 	windowMessageContextMenu   = 0x007B
+	windowMessageLeftButtonUp  = 0x0202
 	windowMessageRightButtonUp = 0x0205
+	trayNotificationSelect     = 0x0400
 	windowMessageHotkey        = 0x0312
 	windowMessageApp           = 0x8000
 	trayCallbackMessage        = windowMessageApp + 1
@@ -36,8 +38,6 @@ const (
 
 	trayIconID                 = 1
 	trayCommandToggle          = 1001
-	trayCommandReload          = 1002
-	trayCommandConfig          = 1003
 	trayCommandLogs            = 1004
 	trayCommandQuit            = 1005
 	trayCommandToggleSelection = 1006
@@ -732,8 +732,6 @@ func (d *windowsDesktop) showTrayMenu() {
 	d.appendMenu(menu, selectionFlags, trayCommandToggleSelection, selectionLabel)
 	d.appendMenu(menu, menuFlagSeparator, 0, "")
 	d.appendMenu(menu, menuFlagString, trayCommandSettings, "设置…")
-	d.appendMenu(menu, menuFlagString, trayCommandReload, "重新加载配置")
-	d.appendMenu(menu, menuFlagString, trayCommandConfig, "打开配置")
 	d.appendMenu(menu, menuFlagString, trayCommandLogs, "打开日志目录")
 	d.appendMenu(menu, menuFlagSeparator, 0, "")
 	d.appendMenu(menu, menuFlagString, trayCommandQuit, "退出")
@@ -755,6 +753,12 @@ func (d *windowsDesktop) showTrayMenu() {
 	}
 }
 
+func (d *windowsDesktop) CursorPosition() (int, int, bool) {
+	var cursor point
+	result, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&cursor)))
+	return int(cursor.X), int(cursor.Y), result != 0
+}
+
 func (d *windowsDesktop) appendMenu(menu uintptr, flags uintptr, id uintptr, label string) {
 	if flags&menuFlagSeparator != 0 {
 		procAppendMenuW.Call(menu, flags, id, 0)
@@ -772,10 +776,6 @@ func (d *windowsDesktop) handleTrayCommand(command uintptr) {
 		invoke(d.callbacks.OnToggleSelection)
 	case trayCommandSettings:
 		invoke(d.callbacks.OnOpenSettings)
-	case trayCommandReload:
-		invoke(d.callbacks.OnReloadConfig)
-	case trayCommandConfig:
-		invoke(d.callbacks.OnOpenConfig)
 	case trayCommandLogs:
 		invoke(d.callbacks.OnOpenLogs)
 	case trayCommandQuit:
@@ -942,7 +942,10 @@ func messageWindowProcedure(window uintptr, message uint32, wParam uintptr, lPar
 		return 0
 	case message == trayCallbackMessage:
 		notification := uint32(lParam & 0xFFFF)
-		if notification == windowMessageRightButtonUp || notification == windowMessageContextMenu {
+		switch notification {
+		case windowMessageLeftButtonUp, trayNotificationSelect:
+			invoke(host.callbacks.OnOpenSettings)
+		case windowMessageRightButtonUp, windowMessageContextMenu:
 			host.showTrayMenu()
 		}
 		return 0

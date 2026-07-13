@@ -21,20 +21,20 @@ import (
 )
 
 const (
-	nativeSubtitleClassName      = "FloatingTranslatorNativeSubtitle"
-	nativeSubtitlePaddingX       = 24
-	nativeSubtitlePaddingY       = 14
-	nativeSubtitleRadius         = 12
-	nativeSubtitleShadowY        = 14
-	nativeSubtitleShadowBlur     = 30
-	nativeSubtitleMaxFailures    = 3
-	nativeSubtitleInitialBackoff = 100 * time.Millisecond
-	nativeSubtitleMaxBackoff     = 2 * time.Second
+	nativeSubtitleClassName         = "FloatingTranslatorNativeSubtitle"
+	nativeSubtitleSupersample       = 2
+	nativeSubtitleMaxRasterPixels   = 40_000_000
+	nativeSubtitleMaxFailures       = 3
+	nativeSubtitleInitialBackoff    = 100 * time.Millisecond
+	nativeSubtitleMaxBackoff        = 2 * time.Second
+	nativeSubtitleScrollTopPause    = time.Second
+	nativeSubtitleScrollBottomPause = 1200 * time.Millisecond
+	nativeSubtitleScrollSpeed       = 24
 )
 
 // nativeSubtitleWindow is a dedicated layered Win32 window. Unlike a WebView
 // window, UpdateLayeredWindow owns every pixel's alpha channel, so the area
-// outside the subtitle card remains genuinely transparent.
+// outside the subtitle text remains genuinely transparent.
 type nativeSubtitleWindow struct {
 	commands            chan nativeSubtitleCommand
 	done                chan struct{}
@@ -53,17 +53,17 @@ type nativeSubtitleCommand struct {
 
 type nativeSubtitleState struct {
 	hwnd           w32.HWND
+	dpi            uint
 	bounds         windowBounds
 	config         config.SubtitleConfig
 	text           string
 	requestID      uint64
 	startedAt      time.Time
-	pausedFor      time.Duration
-	hoverStarted   time.Time
 	hovering       bool
 	visible        bool
+	persistent     bool
 	lastAlpha      float64
-	card           w32.RECT
+	textBounds     w32.RECT
 	renderFailures int
 	nextRenderAt   time.Time
 }
@@ -100,6 +100,8 @@ func (w *nativeSubtitleWindow) Display(event processor.Event) {
 	case <-w.done:
 	}
 }
+
+func (w *nativeSubtitleWindow) SetContentBounds(int, int, int, int, bool) {}
 
 func (w *nativeSubtitleWindow) Close() {
 	w.close.Do(func() {
@@ -175,9 +177,8 @@ func (s *nativeSubtitleState) apply(command nativeSubtitleCommand) error {
 		}
 		s.requestID = command.event.RequestID
 		s.text = command.event.Text
+		s.persistent = command.event.Persistent
 		s.startedAt = time.Now()
-		s.pausedFor = 0
-		s.hoverStarted = time.Time{}
 		s.hovering = false
 		s.visible = true
 		s.lastAlpha = -1
@@ -254,6 +255,13 @@ func scaleSubtitlePixel(value int, dpi uint) int {
 func (s *nativeSubtitleState) renderCurrentFrame() error {
 	now := time.Now()
 	if s.updateHover(now) {
+		if s.lastAlpha == 1 {
+			return nil
+		}
+		if err := s.render(1); err != nil {
+			return err
+		}
+		s.lastAlpha = 1
 		return nil
 	}
 	alpha, stillVisible := s.animationAlpha(now)
@@ -274,12 +282,15 @@ func (s *nativeSubtitleState) renderCurrentFrame() error {
 }
 
 func (s *nativeSubtitleState) animationAlpha(now time.Time) (float64, bool) {
-	elapsed := now.Sub(s.startedAt) - s.pausedFor
+	elapsed := now.Sub(s.startedAt)
 	fadeIn := time.Duration(s.config.FadeInMS) * time.Millisecond
 	display := time.Duration(s.config.DisplayMS) * time.Millisecond
 	fadeOut := time.Duration(s.config.FadeOutMS) * time.Millisecond
 	if elapsed < fadeIn && fadeIn > 0 {
 		return float64(elapsed) / float64(fadeIn), true
+	}
+	if s.persistent {
+		return 1, true
 	}
 	if elapsed < fadeIn+display {
 		return 1, true
@@ -292,30 +303,87 @@ func (s *nativeSubtitleState) animationAlpha(now time.Time) (float64, bool) {
 
 func (s *nativeSubtitleState) updateHover(now time.Time) bool {
 	x, y, ok := w32.GetCursorPos()
-	hovered := ok && s.card.Right > s.card.Left &&
-		x >= s.bounds.X+int(s.card.Left) && x < s.bounds.X+int(s.card.Right) &&
-		y >= s.bounds.Y+int(s.card.Top) && y < s.bounds.Y+int(s.card.Bottom)
-	if hovered && !s.hovering {
-		s.hovering = true
-		s.hoverStarted = now
+	hovered := ok && s.textBounds.Right > s.textBounds.Left &&
+		x >= s.bounds.X+int(s.textBounds.Left) && x < s.bounds.X+int(s.textBounds.Right) &&
+		y >= s.bounds.Y+int(s.textBounds.Top) && y < s.bounds.Y+int(s.textBounds.Bottom)
+	if hovered == s.hovering {
+		return hovered
 	}
-	if !hovered && s.hovering {
-		s.pausedFor += now.Sub(s.hoverStarted)
-		s.hovering = false
-		s.hoverStarted = time.Time{}
+	s.hovering = hovered
+	if !hovered {
+		s.restartDisplayAfterHover(now)
 	}
-	return s.hovering
+	return hovered
+}
+
+func (s *nativeSubtitleState) restartDisplayAfterHover(now time.Time) {
+	// 移开文字后不恢复旧倒计时，而是从完整停留时间重新计算淡出。
+	fadeIn := time.Duration(s.config.FadeInMS) * time.Millisecond
+	s.startedAt = now.Add(-fadeIn)
+	s.lastAlpha = -1
 }
 
 func (s *nativeSubtitleState) render(alpha float64) error {
-	if s.bounds.Width <= 0 || s.bounds.Height <= 0 {
-		return fmt.Errorf("字幕窗口尺寸无效: %dx%d", s.bounds.Width, s.bounds.Height)
+	pixels, textBounds, err := s.rasterize(alpha, nativeSubtitleSupersample)
+	if err != nil {
+		return err
 	}
-	pixelCount := int64(s.bounds.Width) * int64(s.bounds.Height)
-	if pixelCount > 40_000_000 {
-		return fmt.Errorf("字幕窗口尺寸过大: %dx%d", s.bounds.Width, s.bounds.Height)
+	s.textBounds = downsampleSubtitleRect(textBounds, nativeSubtitleSupersample)
+	return s.updateLayeredPixels(pixels)
+}
+
+func (s *nativeSubtitleState) renderPreviewPixels() ([]byte, error) {
+	pixels, _, err := s.rasterize(1, nativeSubtitleSupersample)
+	return pixels, err
+}
+
+func (s *nativeSubtitleState) rasterize(alpha float64, supersample int) ([]byte, w32.RECT, error) {
+	if s.bounds.Width <= 0 || s.bounds.Height <= 0 {
+		return nil, w32.RECT{}, fmt.Errorf("字幕窗口尺寸无效: %dx%d", s.bounds.Width, s.bounds.Height)
+	}
+	if supersample <= 0 {
+		supersample = 1
+	}
+	raster := *s
+	raster.bounds.Width *= supersample
+	raster.bounds.Height *= supersample
+	raster.dpi = s.renderDPI() * uint(supersample)
+	pixelCount := int64(raster.bounds.Width) * int64(raster.bounds.Height)
+	if pixelCount > nativeSubtitleMaxRasterPixels {
+		return nil, w32.RECT{}, fmt.Errorf("字幕光栅尺寸过大: %dx%d", raster.bounds.Width, raster.bounds.Height)
 	}
 
+	bmi := w32.BITMAPINFO{BmiHeader: w32.BITMAPINFOHEADER{
+		BiSize:        uint32(unsafe.Sizeof(w32.BITMAPINFOHEADER{})),
+		BiWidth:       int32(raster.bounds.Width),
+		BiHeight:      -int32(raster.bounds.Height),
+		BiPlanes:      1,
+		BiBitCount:    32,
+		BiCompression: w32.BI_RGB,
+	}}
+	var bits unsafe.Pointer
+	bitmap := w32.CreateDIBSection(0, &bmi, w32.DIB_RGB_COLORS, &bits, 0, 0)
+	if bitmap == 0 {
+		return nil, w32.RECT{}, fmt.Errorf("创建字幕位图失败: %w", windows.GetLastError())
+	}
+	defer w32.DeleteObject(w32.HGDIOBJ(bitmap))
+
+	dc := w32.CreateCompatibleDC(0)
+	defer w32.DeleteDC(dc)
+	oldBitmap := w32.SelectObject(dc, w32.HGDIOBJ(bitmap))
+	defer w32.SelectObject(dc, oldBitmap)
+
+	sourcePixels := unsafe.Slice((*byte)(bits), int(pixelCount*4))
+	clear(sourcePixels)
+	textBounds, font := raster.drawText(dc)
+	raster.textBounds = textBounds
+	defer w32.DeleteObject(w32.HGDIOBJ(font))
+	raster.applyAlpha(sourcePixels, alpha)
+	return downsampleSubtitlePixels(sourcePixels, raster.bounds.Width, raster.bounds.Height, supersample), textBounds, nil
+}
+
+func (s *nativeSubtitleState) updateLayeredPixels(pixels []byte) error {
+	pixelCount := int64(s.bounds.Width) * int64(s.bounds.Height)
 	bmi := w32.BITMAPINFO{BmiHeader: w32.BITMAPINFOHEADER{
 		BiSize:        uint32(unsafe.Sizeof(w32.BITMAPINFOHEADER{})),
 		BiWidth:       int32(s.bounds.Width),
@@ -327,7 +395,7 @@ func (s *nativeSubtitleState) render(alpha float64) error {
 	var bits unsafe.Pointer
 	bitmap := w32.CreateDIBSection(0, &bmi, w32.DIB_RGB_COLORS, &bits, 0, 0)
 	if bitmap == 0 {
-		return fmt.Errorf("创建字幕位图失败: %w", windows.GetLastError())
+		return fmt.Errorf("创建字幕输出位图失败: %w", windows.GetLastError())
 	}
 	defer w32.DeleteObject(w32.HGDIOBJ(bitmap))
 
@@ -335,13 +403,7 @@ func (s *nativeSubtitleState) render(alpha float64) error {
 	defer w32.DeleteDC(dc)
 	oldBitmap := w32.SelectObject(dc, w32.HGDIOBJ(bitmap))
 	defer w32.SelectObject(dc, oldBitmap)
-
-	pixels := unsafe.Slice((*byte)(bits), int(pixelCount*4))
-	clear(pixels)
-	card, font := s.drawCardAndText(dc)
-	s.card = card
-	defer w32.DeleteObject(w32.HGDIOBJ(font))
-	s.applyAlpha(pixels, card, alpha)
+	copy(unsafe.Slice((*byte)(bits), int(pixelCount*4)), pixels)
 
 	screenDC := w32.GetDC(0)
 	defer w32.ReleaseDC(0, screenDC)
@@ -349,9 +411,6 @@ func (s *nativeSubtitleState) render(alpha float64) error {
 	size := w32.SIZE{CX: int32(s.bounds.Width), CY: int32(s.bounds.Height)}
 	source := w32.POINT{}
 	blend := w32.BLENDFUNCTION{BlendOp: w32.AC_SRC_OVER, SourceConstantAlpha: 255, AlphaFormat: w32.AC_SRC_ALPHA}
-	// Position the popup before committing its alpha bitmap. Calling
-	// SetWindowPos or ShowWindow afterwards can make Windows repaint a portion
-	// of the client area with the default (white) background.
 	w32.SetWindowPos(s.hwnd, w32.HWND_TOPMOST, s.bounds.X, s.bounds.Y, s.bounds.Width, s.bounds.Height, w32.SWP_NOACTIVATE|w32.SWP_SHOWWINDOW)
 	if !w32.UpdateLayeredWindow(s.hwnd, screenDC, &destination, &size, dc, &source, 0, &blend, w32.ULW_ALPHA) {
 		return fmt.Errorf("更新透明字幕窗口失败: %w", windows.GetLastError())
@@ -359,16 +418,60 @@ func (s *nativeSubtitleState) render(alpha float64) error {
 	return nil
 }
 
-func (s *nativeSubtitleState) drawCardAndText(dc w32.HDC) (w32.RECT, w32.HFONT) {
-	dpi := uint(w32.GetDpiForWindow(s.hwnd))
+func (s *nativeSubtitleState) renderDPI() uint {
+	if s.dpi != 0 {
+		return s.dpi
+	}
+	return uint(w32.GetDpiForWindow(s.hwnd))
+}
+
+func downsampleSubtitlePixels(source []byte, sourceWidth int, sourceHeight int, factor int) []byte {
+	if factor <= 1 {
+		return append([]byte(nil), source...)
+	}
+	width := sourceWidth / factor
+	height := sourceHeight / factor
+	pixels := make([]byte, width*height*4)
+	area := factor * factor
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			var blue, green, red, alpha int
+			for offsetY := 0; offsetY < factor; offsetY++ {
+				for offsetX := 0; offsetX < factor; offsetX++ {
+					sourceOffset := ((y*factor+offsetY)*sourceWidth + x*factor + offsetX) * 4
+					blue += int(source[sourceOffset])
+					green += int(source[sourceOffset+1])
+					red += int(source[sourceOffset+2])
+					alpha += int(source[sourceOffset+3])
+				}
+			}
+			targetOffset := (y*width + x) * 4
+			pixels[targetOffset] = byte(blue / area)
+			pixels[targetOffset+1] = byte(green / area)
+			pixels[targetOffset+2] = byte(red / area)
+			pixels[targetOffset+3] = byte(alpha / area)
+		}
+	}
+	return pixels
+}
+
+func downsampleSubtitleRect(rect w32.RECT, factor int) w32.RECT {
+	return w32.RECT{
+		Left:   rect.Left / int32(factor),
+		Top:    rect.Top / int32(factor),
+		Right:  (rect.Right + int32(factor-1)) / int32(factor),
+		Bottom: (rect.Bottom + int32(factor-1)) / int32(factor),
+	}
+}
+
+func (s *nativeSubtitleState) drawText(dc w32.HDC) (w32.RECT, w32.HFONT) {
+	dpi := s.renderDPI()
 	fontSize := scaleSubtitlePixel(s.config.FontSize, dpi)
-	paddingX := scaleSubtitlePixel(nativeSubtitlePaddingX, dpi)
-	paddingY := scaleSubtitlePixel(nativeSubtitlePaddingY, dpi)
 	font := w32.CreateFontIndirect(&w32.LOGFONT{
 		Height: -int32(fontSize),
 		Weight: w32.FW_MEDIUM,
-		// ClearType is designed for an opaque background. Grayscale antialiasing
-		// keeps glyph edges sharp after this bitmap receives per-pixel alpha.
+		// ClearType is designed for opaque backgrounds. Grayscale antialiasing
+		// keeps glyph edges sharp after the bitmap receives per-pixel alpha.
 		Quality: 4, // ANTIALIASED_QUALITY
 		FaceName: func() [w32.LF_FACESIZE]uint16 {
 			var name [w32.LF_FACESIZE]uint16
@@ -381,150 +484,181 @@ func (s *nativeSubtitleState) drawCardAndText(dc w32.HDC) (w32.RECT, w32.HFONT) 
 
 	text := utf16.Encode([]rune(s.text))
 	stagePadding := subtitleStagePadding(s.bounds.Height, dpi)
-	cardWidth := max(1, s.bounds.Width-2*stagePadding)
-	maxTextWidth := max(1, cardWidth-2*paddingX)
+	maxTextWidth := max(1, s.bounds.Width-2*stagePadding)
 	measure := w32.RECT{Right: int32(maxTextWidth)}
 	w32.DrawText(dc, text, len(text), &measure, w32.DT_CALCRECT|w32.DT_CENTER|w32.DT_WORDBREAK|w32.DT_NOPREFIX)
 	lineHeight := max(fontSize*16/10, fontSize+scaleSubtitlePixel(4, dpi))
 	maxTextHeight := lineHeight * s.config.MaxLines
-	textHeight := min(maxTextHeight, max(lineHeight, int(measure.Bottom-measure.Top)))
-	cardHeight := min(s.bounds.Height, textHeight+2*paddingY)
-	card := w32.RECT{
-		Left:   int32((s.bounds.Width - cardWidth) / 2),
-		Top:    int32((s.bounds.Height - cardHeight) / 2),
-		Right:  int32((s.bounds.Width + cardWidth) / 2),
-		Bottom: int32((s.bounds.Height + cardHeight) / 2),
+	fullTextHeight := max(lineHeight, int(measure.Bottom-measure.Top))
+	viewportHeight := min(maxTextHeight, fullTextHeight)
+	textWidth := min(maxTextWidth, max(1, int(measure.Right-measure.Left)))
+	viewport := w32.RECT{
+		Left:   int32((s.bounds.Width - textWidth) / 2),
+		Top:    int32((s.bounds.Height - viewportHeight) / 2),
+		Right:  int32((s.bounds.Width + textWidth) / 2),
+		Bottom: int32((s.bounds.Height + viewportHeight) / 2),
 	}
-	brush := w32.CreateSolidBrush(w32.COLORREF(w32.RGB(17, 22, 27)))
-	w32.FillRect(dc, &card, brush)
-	w32.DeleteObject(w32.HGDIOBJ(brush))
+	drawBounds := viewport
+	flags := uint32(w32.DT_CENTER | w32.DT_VCENTER | w32.DT_WORDBREAK | w32.DT_NOPREFIX)
+	if fullTextHeight > viewportHeight {
+		offset := int(math.Round(s.subtitleScrollOffset(time.Now(), fullTextHeight-viewportHeight, dpi)))
+		drawBounds.Top -= int32(offset)
+		drawBounds.Bottom = drawBounds.Top + int32(fullTextHeight)
+		flags = w32.DT_CENTER | w32.DT_TOP | w32.DT_WORDBREAK | w32.DT_NOPREFIX
+	}
 
-	textRect := w32.RECT{
-		Left:   card.Left + int32(paddingX),
-		Top:    card.Top + int32(paddingY),
-		Right:  card.Right - int32(paddingX),
-		Bottom: card.Bottom - int32(paddingY),
-	}
 	w32.SetBkMode(dc, w32.TRANSPARENT)
-	w32.SetTextColor(dc, w32.COLORREF(w32.RGB(248, 250, 252)))
-	w32.DrawText(dc, text, len(text), &textRect, w32.DT_CENTER|w32.DT_VCENTER|w32.DT_WORDBREAK|w32.DT_NOPREFIX)
-	return card, font
+	s.drawTextShadow(dc, text, drawBounds, dpi, flags)
+	s.drawTextOutline(dc, text, drawBounds, dpi, flags)
+	// 使用纯蓝色作为文字掩码，后续 applyAlpha 按用户颜色写入预乘像素。
+	w32.SetTextColor(dc, w32.COLORREF(w32.RGB(0, 0, 255)))
+	w32.DrawText(dc, text, len(text), &drawBounds, flags)
+	s.textBounds = viewport
+	return viewport, font
 }
 
-// subtitleStagePadding mirrors the original .overlay-stage CSS padding:
-// clamp(14px, 2.2vh, 28px). The card then spans the available stage width,
-// rather than shrinking to the width of a short translation.
+func (s *nativeSubtitleState) subtitleScrollOffset(now time.Time, overflow int, dpi uint) float64 {
+	if overflow <= 0 || s.persistent {
+		return 0
+	}
+	speed := float64(scaleSubtitlePixel(nativeSubtitleScrollSpeed, dpi))
+	travel := time.Duration(float64(overflow) / speed * float64(time.Second))
+	cycle := nativeSubtitleScrollTopPause + travel + nativeSubtitleScrollBottomPause
+	if cycle <= 0 {
+		return 0
+	}
+	elapsed := now.Sub(s.startedAt) % cycle
+	if elapsed <= nativeSubtitleScrollTopPause {
+		return 0
+	}
+	elapsed -= nativeSubtitleScrollTopPause
+	if elapsed >= travel {
+		return float64(overflow)
+	}
+	return float64(overflow) * float64(elapsed) / float64(travel)
+}
+
+// subtitleStagePadding mirrors the Vue overlay-stage padding:
+// clamp(14px, 2.2vh, 28px), leaving a safe edge around the text.
 func subtitleStagePadding(height int, dpi uint) int {
 	return min(scaleSubtitlePixel(28, dpi), max(scaleSubtitlePixel(14, dpi), height*22/1000))
 }
 
-// applyAlpha converts the GDI bitmap to premultiplied BGRA expected by
-// UpdateLayeredWindow. GDI does not populate the alpha byte itself, so this
-// is also where the native renderer recreates the web subtitle card's rounded
-// corners, subtle gradient, border and shadow.
-func (s *nativeSubtitleState) applyAlpha(pixels []byte, card w32.RECT, animationAlpha float64) {
-	s.drawShadow(pixels, card, animationAlpha)
-	radius := scaleSubtitlePixel(nativeSubtitleRadius, uint(w32.GetDpiForWindow(s.hwnd)))
-
-	topOpacity := min(1, s.config.BackgroundOpacity+0.08)
-	for y := int(card.Top); y < int(card.Bottom); y++ {
-		for x := int(card.Left); x < int(card.Right); x++ {
-			offset := (y*s.bounds.Width + x) * 4
-			blue, green, red := pixels[offset], pixels[offset+1], pixels[offset+2]
-			if roundedRectDistance(x, y, card, radius) > 0 {
-				continue
-			}
-			if red > 80 && green > 80 && blue > 80 {
-				coverage := float64(max(int(red), max(int(green), int(blue)))-17) / float64(255-17)
-				coverage = min(1, max(0, coverage))
-				textAlpha := byte(math.Round(coverage * animationAlpha * 255))
-				pixels[offset] = byte(int(252) * int(textAlpha) / 255)
-				pixels[offset+1] = byte(int(250) * int(textAlpha) / 255)
-				pixels[offset+2] = byte(int(248) * int(textAlpha) / 255)
-				pixels[offset+3] = textAlpha
-				continue
-			}
-
-			ratio := float64(y-int(card.Top)) / float64(max(1, int(card.Bottom-card.Top)-1))
-			opacity := topOpacity + (s.config.BackgroundOpacity-topOpacity)*ratio
-			backgroundAlpha := opacity * animationAlpha
-			redValue := 17 + (4-17)*ratio
-			greenValue := 22 + (7-22)*ratio
-			blueValue := 27 + (10-27)*ratio
-
-			if roundedRectBorder(x, y, card, radius) {
-				// The CSS card had a very light one-pixel outline. Composite that
-				// over the gradient rather than using an opaque GDI border.
-				borderAlpha := 0.09 * animationAlpha
-				redValue = redValue*(1-borderAlpha) + 255*borderAlpha
-				greenValue = greenValue*(1-borderAlpha) + 255*borderAlpha
-				blueValue = blueValue*(1-borderAlpha) + 255*borderAlpha
-				backgroundAlpha += borderAlpha * (1 - backgroundAlpha)
-			}
-
-			pixels[offset] = byte(math.Round(blueValue * backgroundAlpha))
-			pixels[offset+1] = byte(math.Round(greenValue * backgroundAlpha))
-			pixels[offset+2] = byte(math.Round(redValue * backgroundAlpha))
-			pixels[offset+3] = byte(math.Round(backgroundAlpha * 255))
+func (s *nativeSubtitleState) drawTextShadow(dc w32.HDC, text []uint16, textBounds w32.RECT, dpi uint, flags uint32) {
+	shadowBounds := textBounds
+	shadowOffset := int32(scaleSubtitlePixel(s.config.ShadowOffsetY, dpi))
+	shadowBounds.Top += shadowOffset
+	shadowBounds.Bottom += shadowOffset
+	blur := scaleSubtitlePixel(s.config.ShadowBlur, dpi)
+	steps := min(8, max(1, blur))
+	for step := steps; step >= 0; step-- {
+		distance := blur * step / steps
+		intensity := byte(255 * (steps - step + 1) / (steps + 1))
+		w32.SetTextColor(dc, w32.COLORREF(w32.RGB(intensity, 0, 0)))
+		for _, offset := range subtitleShadowOffsets(distance) {
+			rect := shadowBounds
+			rect.Left += int32(offset.x)
+			rect.Right += int32(offset.x)
+			rect.Top += int32(offset.y)
+			rect.Bottom += int32(offset.y)
+			w32.DrawText(dc, text, len(text), &rect, flags)
 		}
 	}
 }
 
-func (s *nativeSubtitleState) drawShadow(pixels []byte, card w32.RECT, animationAlpha float64) {
-	dpi := uint(w32.GetDpiForWindow(s.hwnd))
-	shadowY := scaleSubtitlePixel(nativeSubtitleShadowY, dpi)
-	shadowBlur := scaleSubtitlePixel(nativeSubtitleShadowBlur, dpi)
-	radius := scaleSubtitlePixel(nativeSubtitleRadius, dpi)
-	shadow := card
-	shadow.Top += int32(shadowY)
-	shadow.Bottom += int32(shadowY)
-	left := max(0, int(shadow.Left)-shadowBlur)
-	right := min(s.bounds.Width, int(shadow.Right)+shadowBlur)
-	top := max(0, int(shadow.Top)-shadowBlur)
-	bottom := min(s.bounds.Height, int(shadow.Bottom)+shadowBlur)
+type subtitlePixelOffset struct {
+	x int
+	y int
+}
 
-	for y := top; y < bottom; y++ {
-		for x := left; x < right; x++ {
-			if roundedRectDistance(x, y, card, radius) == 0 {
+func subtitleShadowOffsets(distance int) []subtitlePixelOffset {
+	if distance == 0 {
+		return []subtitlePixelOffset{{}}
+	}
+	return []subtitlePixelOffset{
+		{x: -distance}, {x: distance}, {y: -distance}, {y: distance},
+		{x: -distance, y: -distance}, {x: distance, y: -distance},
+		{x: -distance, y: distance}, {x: distance, y: distance},
+	}
+}
+
+func (s *nativeSubtitleState) drawTextOutline(dc w32.HDC, text []uint16, textBounds w32.RECT, dpi uint, flags uint32) {
+	width := scaleSubtitlePixel(s.config.OutlineWidth, dpi)
+	if width <= 0 {
+		return
+	}
+	innerRadius := max(0, width-2)
+	w32.SetTextColor(dc, w32.COLORREF(w32.RGB(0, 255, 0)))
+	for y := -width; y <= width; y++ {
+		for x := -width; x <= width; x++ {
+			distanceSquared := x*x + y*y
+			if distanceSquared > width*width || distanceSquared < innerRadius*innerRadius {
 				continue
 			}
-			distance := roundedRectDistance(x, y, shadow, radius)
-			if distance <= 0 || distance >= float64(shadowBlur) {
-				continue
-			}
-			strength := 1 - distance/float64(shadowBlur)
-			alpha := byte(math.Round(0.32 * animationAlpha * strength * strength * 255))
-			offset := (y*s.bounds.Width + x) * 4
-			pixels[offset], pixels[offset+1], pixels[offset+2], pixels[offset+3] = 0, 0, 0, alpha
+			rect := textBounds
+			rect.Left += int32(x)
+			rect.Right += int32(x)
+			rect.Top += int32(y)
+			rect.Bottom += int32(y)
+			w32.DrawText(dc, text, len(text), &rect, flags)
 		}
 	}
 }
 
-// roundedRectDistance returns zero inside a rounded rectangle and the pixel
-// distance outside it. Coordinates deliberately use pixel centres so corners
-// stay smooth when their alpha is composited by UpdateLayeredWindow.
-func roundedRectDistance(x, y int, rect w32.RECT, radius int) float64 {
-	left, top := float64(rect.Left), float64(rect.Top)
-	right, bottom := float64(rect.Right-1), float64(rect.Bottom-1)
-	px, py := float64(x), float64(y)
-	r := float64(min(radius, min(int((right-left+1)/2), int((bottom-top+1)/2))))
-	innerLeft, innerRight := left+r, right-r
-	innerTop, innerBottom := top+r, bottom-r
-	nearestX := min(max(px, innerLeft), innerRight)
-	nearestY := min(max(py, innerTop), innerBottom)
-	return max(0, math.Hypot(px-nearestX, py-nearestY)-r)
+// applyAlpha converts color-coded GDI masks to premultiplied BGRA expected by
+// UpdateLayeredWindow. The transparent bitmap only contains text, its outline,
+// and its black shadow; no card, border, or background is painted.
+func (s *nativeSubtitleState) applyAlpha(pixels []byte, animationAlpha float64) {
+	textRed, textGreen, textBlue := subtitleHexColor(s.config.TextColor)
+	outlineRed, outlineGreen, outlineBlue := subtitleHexColor(s.config.OutlineColor)
+	for offset := 0; offset < len(pixels); offset += 4 {
+		pixel := offset / 4
+		x := pixel % s.bounds.Width
+		y := pixel / s.bounds.Width
+		if x < int(s.textBounds.Left) || x >= int(s.textBounds.Right) || y < int(s.textBounds.Top) || y >= int(s.textBounds.Bottom) {
+			pixels[offset], pixels[offset+1], pixels[offset+2], pixels[offset+3] = 0, 0, 0, 0
+			continue
+		}
+		blue, green, red := pixels[offset], pixels[offset+1], pixels[offset+2]
+		switch {
+		case blue != 0:
+			writeSubtitlePixel(pixels, offset, float64(blue)/255, animationAlpha, textRed, textGreen, textBlue)
+		case green != 0:
+			writeSubtitlePixel(pixels, offset, float64(green)/255, animationAlpha, outlineRed, outlineGreen, outlineBlue)
+		case red != 0:
+			writeSubtitlePixel(pixels, offset, float64(red)/255, animationAlpha*s.config.ShadowOpacity, 0, 0, 0)
+		}
+	}
 }
 
-func roundedRectBorder(x, y int, rect w32.RECT, radius int) bool {
-	if roundedRectDistance(x, y, rect, radius) > 0 {
-		return false
+func writeSubtitlePixel(pixels []byte, offset int, coverage float64, opacity float64, red byte, green byte, blue byte) {
+	alpha := byte(math.Round(min(1, coverage*opacity) * 255))
+	pixels[offset] = byte(int(blue) * int(alpha) / 255)
+	pixels[offset+1] = byte(int(green) * int(alpha) / 255)
+	pixels[offset+2] = byte(int(red) * int(alpha) / 255)
+	pixels[offset+3] = alpha
+}
+
+func subtitleHexColor(value string) (byte, byte, byte) {
+	value = strings.TrimSpace(value)
+	return subtitleHexByte(value[1], value[2]), subtitleHexByte(value[3], value[4]), subtitleHexByte(value[5], value[6])
+}
+
+func subtitleHexByte(high byte, low byte) byte {
+	return subtitleHexNibble(high)<<4 | subtitleHexNibble(low)
+}
+
+func subtitleHexNibble(value byte) byte {
+	switch {
+	case value >= '0' && value <= '9':
+		return value - '0'
+	case value >= 'a' && value <= 'f':
+		return value - 'a' + 10
+	case value >= 'A' && value <= 'F':
+		return value - 'A' + 10
+	default:
+		return 0
 	}
-	inner := rect
-	inner.Left++
-	inner.Top++
-	inner.Right--
-	inner.Bottom--
-	return inner.Right > inner.Left && inner.Bottom > inner.Top && roundedRectDistance(x, y, inner, max(1, radius-1)) > 0
 }
 
 func createNativeSubtitleWindow() (w32.HWND, error) {

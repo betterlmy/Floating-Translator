@@ -59,7 +59,8 @@ func main() {
 				application.MacWindowCollectionBehaviorFullScreenAuxiliary,
 		},
 	})
-	subtitle := &darwinSubtitleWindow{window: subtitleWindow}
+	subtitle := newWebviewSubtitleWindow(subtitleWindow, service.desktop.CursorPosition)
+	defer subtitle.Close()
 
 	settingsWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:                       "settings",

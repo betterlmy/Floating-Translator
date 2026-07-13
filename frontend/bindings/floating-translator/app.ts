@@ -49,7 +49,21 @@ export function GetSettings(): $CancellablePromise<config$0.Settings> {
 }
 
 /**
- * SaveSettings 校验并保存设置，成功后立即应用新配置。
+ * RenderSubtitlePreview 以当前平台的真实字幕渲染器生成设置页预览图。
+ */
+export function RenderSubtitlePreview(subtitle: config$0.SubtitleConfig, width: number, height: number, deviceScale: number): $CancellablePromise<string> {
+    return $Call.ByID(3543669267, subtitle, width, height, deviceScale);
+}
+
+/**
+ * ReportSubtitleBounds 接收 Vue 测得的字幕文字边界，用于鼠标穿透状态下的原生悬停检测。
+ */
+export function ReportSubtitleBounds(x: number, y: number, width: number, height: number, visible: boolean): $CancellablePromise<void> {
+    return $Call.ByID(4239538570, x, y, width, height, visible);
+}
+
+/**
+ * SaveSettings 校验并保存设置，成功时立即应用；清空 API Key 后进入配置错误状态。
  */
 export function SaveSettings(settings: config$0.Settings): $CancellablePromise<void> {
     return $Call.ByID(1949631069, settings);

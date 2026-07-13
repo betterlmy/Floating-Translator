@@ -39,6 +39,7 @@ func main() {
 		return
 	}
 	defer subtitle.Close()
+
 	settingsWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:                       "settings",
 		Title:                      settingsWindowTitle,
@@ -69,8 +70,7 @@ func main() {
 		})
 	})
 
-	err = app.Run()
-	if err != nil {
+	if err := app.Run(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "应用启动失败: %v\n", err)
 	}
 }

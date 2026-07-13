@@ -55,18 +55,23 @@ func (c *testApplicationController) PrimaryWorkArea() (workArea, error) {
 }
 
 type testWindowController struct {
-	shown       bool
-	hidden      bool
-	focused     bool
-	alwaysOnTop bool
-	width       int
-	height      int
-	x           int
-	y           int
-	events      []string
-	subtitleCfg config.SubtitleConfig
-	translation processor.Event
-	closed      bool
+	shown          bool
+	hidden         bool
+	focused        bool
+	alwaysOnTop    bool
+	width          int
+	height         int
+	x              int
+	y              int
+	events         []string
+	subtitleCfg    config.SubtitleConfig
+	translation    processor.Event
+	contentX       int
+	contentY       int
+	contentWidth   int
+	contentHeight  int
+	contentVisible bool
+	closed         bool
 }
 
 func (c *testWindowController) Show()                         { c.shown = true }
@@ -83,7 +88,12 @@ func (c *testWindowController) Configure(bounds windowBounds, cfg config.Subtitl
 	return nil
 }
 func (c *testWindowController) Display(event processor.Event) { c.translation = event }
-func (c *testWindowController) Close()                        { c.closed = true }
+func (c *testWindowController) SetContentBounds(x int, y int, width int, height int, visible bool) {
+	c.contentX, c.contentY = x, y
+	c.contentWidth, c.contentHeight = width, height
+	c.contentVisible = visible
+}
+func (c *testWindowController) Close() { c.closed = true }
 
 func (d *startupDesktop) Start(_ context.Context, callbacks platform.Callbacks) error {
 	*d.events = append(*d.events, "desktop_start")
@@ -124,6 +134,8 @@ func (d *startupDesktop) ApplyOverlay(platform.OverlayOptions) error { return ni
 
 func (d *startupDesktop) ApplySettingsWindow(platform.WindowOptions) error { return nil }
 
+func (d *startupDesktop) CursorPosition() (int, int, bool) { return 0, 0, false }
+
 func (d *startupDesktop) OpenPath(string) error {
 	d.openPathCalls++
 	return nil
@@ -142,8 +154,6 @@ func TestStartupStartsTrayBeforeConfigFailure(t *testing.T) {
 		// user callback must be harmless during this window.
 		desktop.callbacks.OnClipboardText("early clipboard text")
 		desktop.callbacks.OnSelectionTranslate()
-		desktop.callbacks.OnReloadConfig()
-		desktop.callbacks.OnOpenConfig()
 		desktop.callbacks.OnOpenLogs()
 		return config.Paths{}, false, errors.New("模拟配置目录错误")
 	}
@@ -293,6 +303,18 @@ func TestEmitTranslationDisplaysOnlyWhenFrontendIsReady(t *testing.T) {
 	app.emitTranslation(event)
 	if window.translation != event {
 		t.Fatalf("字幕事件 = %#v, want %#v", window.translation, event)
+	}
+}
+
+func TestReportSubtitleBoundsForwardsToSubtitleController(t *testing.T) {
+	window := &testWindowController{}
+	app := NewApp()
+	app.subtitle = window
+
+	app.ReportSubtitleBounds(10, 20, 300, 80, true)
+
+	if window.contentX != 10 || window.contentY != 20 || window.contentWidth != 300 || window.contentHeight != 80 || !window.contentVisible {
+		t.Fatalf("字幕内容边界未正确转发: %#v", window)
 	}
 }
 

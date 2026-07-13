@@ -24,6 +24,7 @@ int macosSendCopyShortcut(void);
 int macosAccessibilityTrusted(void);
 void macosOpenAccessibilitySettings(void);
 char *macosReadSelectedText(void);
+int macosCursorPosition(double *x, double *y);
 */
 import "C"
 
@@ -46,9 +47,7 @@ const (
 	macEventSelectionTranslate = 1
 	macEventToggleSelection    = 2
 	macEventToggleListening    = 3
-	macEventReloadConfig       = 4
 	macEventOpenSettings       = 5
-	macEventOpenConfig         = 6
 	macEventOpenLogs           = 7
 	macEventQuit               = 8
 
@@ -338,6 +337,15 @@ func (d *darwinDesktop) ApplySettingsWindow(_ WindowOptions) error {
 	return nil
 }
 
+func (d *darwinDesktop) CursorPosition() (int, int, bool) {
+	var x C.double
+	var y C.double
+	if C.macosCursorPosition(&x, &y) == 0 {
+		return 0, 0, false
+	}
+	return int(x), int(y), true
+}
+
 func (d *darwinDesktop) OpenPath(path string) error {
 	if strings.TrimSpace(path) == "" {
 		return errors.New("打开路径不能为空")
@@ -531,12 +539,8 @@ func goMacEventCallback(eventID C.int) {
 		callback = desktop.callbacks.OnToggleSelection
 	case macEventToggleListening:
 		callback = desktop.callbacks.OnToggleListening
-	case macEventReloadConfig:
-		callback = desktop.callbacks.OnReloadConfig
 	case macEventOpenSettings:
 		callback = desktop.callbacks.OnOpenSettings
-	case macEventOpenConfig:
-		callback = desktop.callbacks.OnOpenConfig
 	case macEventOpenLogs:
 		callback = desktop.callbacks.OnOpenLogs
 	case macEventQuit:

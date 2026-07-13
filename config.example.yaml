@@ -33,6 +33,12 @@ subtitle:
   font_size: 28
   max_lines: 4
   background_opacity: 0.38
+  text_color: "#F8FAFC"
+  outline_width: 1
+  outline_color: "#000000"
+  shadow_offset_y: 3
+  shadow_blur: 8
+  shadow_opacity: 0.88
   fade_in_ms: 200
   display_ms: 6000
   fade_out_ms: 800
