@@ -1,6 +1,6 @@
 import {Events} from '@wailsio/runtime'
 
-import {CloseSettings, FrontendReady, GetAvailableFonts, GetSettings, RenderSubtitlePreview, ReportSubtitleBounds, SaveSettings} from '../bindings/floating-translator/app'
+import {CloseSettings, FrontendReady, GetAvailableFonts, GetSettings, RenderSubtitlePreview, ReportSubtitleBounds, SaveSettings} from '../bindings/floating-translator/internal/app/app'
 
 import type {SettingsData} from './settings_types'
 

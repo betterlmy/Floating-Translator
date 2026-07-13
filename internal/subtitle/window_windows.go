@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package subtitle
 
 import (
 	"fmt"
@@ -44,7 +44,7 @@ type nativeSubtitleWindow struct {
 }
 
 type nativeSubtitleCommand struct {
-	bounds *windowBounds
+	bounds *Bounds
 	config *config.SubtitleConfig
 	event  *processor.Event
 	close  bool
@@ -54,7 +54,7 @@ type nativeSubtitleCommand struct {
 type nativeSubtitleState struct {
 	hwnd           w32.HWND
 	dpi            uint
-	bounds         windowBounds
+	bounds         Bounds
 	config         config.SubtitleConfig
 	text           string
 	requestID      uint64
@@ -68,7 +68,8 @@ type nativeSubtitleState struct {
 	nextRenderAt   time.Time
 }
 
-func newNativeSubtitleWindow(renderErrorReporter func(error)) (*nativeSubtitleWindow, error) {
+// NewWindow 创建 Windows 原生分层字幕窗口。
+func NewWindow(renderErrorReporter func(error)) (Controller, error) {
 	window := &nativeSubtitleWindow{
 		commands:            make(chan nativeSubtitleCommand),
 		done:                make(chan struct{}),
@@ -82,7 +83,7 @@ func newNativeSubtitleWindow(renderErrorReporter func(error)) (*nativeSubtitleWi
 	return window, nil
 }
 
-func (w *nativeSubtitleWindow) Configure(bounds windowBounds, cfg config.SubtitleConfig) error {
+func (w *nativeSubtitleWindow) Configure(bounds Bounds, cfg config.SubtitleConfig) error {
 	reply := make(chan error, 1)
 	command := nativeSubtitleCommand{bounds: &bounds, config: &cfg, reply: reply}
 	select {
@@ -231,9 +232,9 @@ func subtitleRenderBackoff(failures int) time.Duration {
 // Win32 window, however, is positioned in physical pixels. Without this
 // conversion the subtitle is both too small and shifted toward the top-left
 // on scaled displays.
-func scaleSubtitleBounds(bounds windowBounds, dpi uint) windowBounds {
+func scaleSubtitleBounds(bounds Bounds, dpi uint) Bounds {
 	scale := subtitleDPIScale(dpi)
-	return windowBounds{
+	return Bounds{
 		X:      int(math.Round(float64(bounds.X) * scale)),
 		Y:      int(math.Round(float64(bounds.Y) * scale)),
 		Width:  int(math.Round(float64(bounds.Width) * scale)),

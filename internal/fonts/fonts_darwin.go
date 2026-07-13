@@ -1,6 +1,6 @@
 //go:build darwin
 
-package main
+package fonts
 
 /*
 #cgo darwin LDFLAGS: -framework Cocoa
@@ -17,9 +17,9 @@ import (
 	"strings"
 )
 
-// GetAvailableFonts returns installed macOS font family names for the
+// List 返回 macOS 已安装的字体族名称。
 // settings search control. Font file paths and other metadata are not exposed.
-func (a *App) GetAvailableFonts() ([]string, error) {
+func List() ([]string, error) {
 	fonts := map[string]struct{}{
 		"Helvetica Neue": {},
 		"PingFang SC":    {},

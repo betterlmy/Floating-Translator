@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package subtitle
 
 import (
 	"bytes"
@@ -16,15 +16,15 @@ import (
 
 const subtitlePreviewText = "翻译结果将在这里清晰呈现"
 
-// renderSubtitlePreview renders the same GDI masks used by the live layered
+// RenderPreview renders the same GDI masks used by the live layered
 // window, then serialises them as a transparent PNG for the settings view.
-func renderSubtitlePreview(subtitle config.SubtitleConfig, width int, height int, deviceScale float64) (string, error) {
+func RenderPreview(subtitle config.SubtitleConfig, width int, height int, deviceScale float64) (string, error) {
 	subtitle = previewSubtitleConfig(subtitle)
 	deviceScale = min(4, max(1, deviceScale))
 	width = min(1920, max(160, int(math.Round(float64(width)*deviceScale))))
 	height = min(600, max(100, int(math.Round(float64(height)*deviceScale))))
 	state := nativeSubtitleState{
-		bounds: windowBounds{Width: width, Height: height},
+		bounds: Bounds{Width: width, Height: height},
 		dpi:    uint(math.Round(96 * deviceScale)),
 		config: subtitle,
 		text:   subtitlePreviewText,

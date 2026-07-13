@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package subtitle
 
 import (
 	"bytes"
@@ -13,9 +13,9 @@ import (
 )
 
 func TestRenderSubtitlePreviewProducesSizedTransparentPNG(t *testing.T) {
-	preview, err := renderSubtitlePreview(config.Default().Subtitle, 640, 158, 1.5)
+	preview, err := RenderPreview(config.Default().Subtitle, 640, 158, 1.5)
 	if err != nil {
-		t.Fatalf("renderSubtitlePreview() error = %v", err)
+		t.Fatalf("RenderPreview() error = %v", err)
 	}
 	const prefix = "data:image/png;base64,"
 	if !strings.HasPrefix(preview, prefix) {

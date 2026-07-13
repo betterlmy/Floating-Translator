@@ -1,6 +1,6 @@
-//go:build darwin
+//go:build windows || darwin
 
-package main
+package app
 
 import (
 	"context"

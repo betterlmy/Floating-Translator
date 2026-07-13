@@ -38,7 +38,7 @@ tidy: ## 整理 Go 模块依赖
 
 bindings: ## 使用 Wails v3 CLI 重新生成前端绑定
 	@command -v $(WAILS) >/dev/null 2>&1 || (echo '未找到 $(WAILS)，请先安装 Wails v3 CLI'; exit 1)
-	$(WAILS) generate bindings -ts -d frontend/bindings
+	$(WAILS) generate bindings -ts -f "-tags=bindings" -d frontend/bindings ./...
 
 syso: ## 生成 Windows 可执行文件图标和版本资源
 	@command -v $(WAILS) >/dev/null 2>&1 || (echo '未找到 $(WAILS)，请先安装 Wails v3 CLI'; exit 1)

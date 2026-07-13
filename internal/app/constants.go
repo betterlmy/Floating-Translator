@@ -1,4 +1,4 @@
-package main
+package app
 
 const (
 	subtitleWindowTitle   = "悬浮翻译器"

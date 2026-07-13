@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package subtitle
 
 import (
 	"testing"
@@ -26,9 +26,9 @@ func TestSubtitleStagePaddingMatchesCSSClamp(t *testing.T) {
 }
 
 func TestScaleSubtitleBoundsForPhysicalPixels(t *testing.T) {
-	bounds := windowBounds{X: 256, Y: 632, Width: 1195, Height: 259}
+	bounds := Bounds{X: 256, Y: 632, Width: 1195, Height: 259}
 	got := scaleSubtitleBounds(bounds, 144)
-	want := windowBounds{X: 384, Y: 948, Width: 1793, Height: 389}
+	want := Bounds{X: 384, Y: 948, Width: 1793, Height: 389}
 	if got != want {
 		t.Fatalf("scaleSubtitleBounds() = %#v, want %#v", got, want)
 	}

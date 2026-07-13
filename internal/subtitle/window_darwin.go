@@ -1,6 +1,6 @@
 //go:build darwin
 
-package main
+package subtitle
 
 import (
 	"sync"
@@ -14,7 +14,8 @@ import (
 
 const subtitleHoverPollInterval = 50 * time.Millisecond
 
-type cursorPositionProvider func() (x int, y int, ok bool)
+// CursorPositionProvider 返回鼠标在屏幕上的物理坐标。
+type CursorPositionProvider func() (x int, y int, ok bool)
 
 type subtitleContentBounds struct {
 	x       int
@@ -28,11 +29,11 @@ type subtitleContentBounds struct {
 // 鼠标悬停由原生全局坐标检测，窗口本身始终保持鼠标穿透。
 type webviewSubtitleWindow struct {
 	window         *application.WebviewWindow
-	cursorPosition cursorPositionProvider
+	cursorPosition CursorPositionProvider
 
 	emitMutex      sync.Mutex
 	mutex          sync.RWMutex
-	logicalBounds  windowBounds
+	logicalBounds  Bounds
 	physicalBounds application.Rect
 	contentBounds  subtitleContentBounds
 	hovered        bool
@@ -41,7 +42,8 @@ type webviewSubtitleWindow struct {
 	closeOnce sync.Once
 }
 
-func newWebviewSubtitleWindow(window *application.WebviewWindow, cursorPosition cursorPositionProvider) *webviewSubtitleWindow {
+// NewWindow 创建 macOS 透明 WebView 字幕窗口。
+func NewWindow(window *application.WebviewWindow, cursorPosition CursorPositionProvider) Controller {
 	subtitle := &webviewSubtitleWindow{
 		window:         window,
 		cursorPosition: cursorPosition,
@@ -51,7 +53,7 @@ func newWebviewSubtitleWindow(window *application.WebviewWindow, cursorPosition 
 	return subtitle
 }
 
-func (w *webviewSubtitleWindow) Configure(bounds windowBounds, cfg config.SubtitleConfig) error {
+func (w *webviewSubtitleWindow) Configure(bounds Bounds, cfg config.SubtitleConfig) error {
 	if w.window == nil {
 		return nil
 	}
@@ -149,7 +151,7 @@ func (w *webviewSubtitleWindow) updateHover() {
 	w.window.EmitEvent(subtitleHoverEvent, hovered)
 }
 
-func pointInSubtitleContent(cursorX int, cursorY int, content subtitleContentBounds, logical windowBounds, physical application.Rect) bool {
+func pointInSubtitleContent(cursorX int, cursorY int, content subtitleContentBounds, logical Bounds, physical application.Rect) bool {
 	left := physical.X + content.x*physical.Width/logical.Width
 	top := physical.Y + content.y*physical.Height/logical.Height
 	right := physical.X + (content.x+content.width)*physical.Width/logical.Width

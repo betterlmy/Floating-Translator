@@ -1,29 +1,25 @@
 //go:build darwin
 
-package main
+package app
 
 import (
 	"embed"
 	"fmt"
-	"os"
+
+	"floating-translator/internal/subtitle"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
-//go:embed all:frontend/dist
-var darwinAssets embed.FS
-
-//go:embed build/appicon.png
-var darwinApplicationIcon []byte
-
-func main() {
-	service := NewAppWithIcon(darwinApplicationIcon)
-	app := application.New(application.Options{
+// Run 装配并运行 macOS Wails 应用。
+func Run(assets embed.FS, applicationIcon []byte) error {
+	service := NewAppWithIcon(applicationIcon)
+	wailsApp := application.New(application.Options{
 		Name: "悬浮翻译器",
-		Icon: darwinApplicationIcon,
+		Icon: applicationIcon,
 		Assets: application.AssetOptions{
-			Handler: application.BundledAssetFileServer(darwinAssets),
+			Handler: application.BundledAssetFileServer(assets),
 		},
 		OnShutdown: service.shutdown,
 		SingleInstance: &application.SingleInstanceOptions{
@@ -31,9 +27,9 @@ func main() {
 			OnSecondInstanceLaunch: service.secondInstanceLaunched,
 		},
 	})
-	app.RegisterService(application.NewService(service))
+	wailsApp.RegisterService(application.NewService(service))
 
-	subtitleWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
+	subtitleWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:                       "subtitle",
 		Title:                      subtitleWindowTitle,
 		URL:                        "/?view=subtitle",
@@ -59,10 +55,10 @@ func main() {
 				application.MacWindowCollectionBehaviorFullScreenAuxiliary,
 		},
 	})
-	subtitle := newWebviewSubtitleWindow(subtitleWindow, service.desktop.CursorPosition)
-	defer subtitle.Close()
+	subtitleController := subtitle.NewWindow(subtitleWindow, service.desktop.CursorPosition)
+	defer subtitleController.Close()
 
-	settingsWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
+	settingsWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:                       "settings",
 		Title:                      settingsWindowTitle,
 		URL:                        "/?view=settings",
@@ -88,8 +84,8 @@ func main() {
 	})
 
 	service.setWindows(
-		&wailsApplicationController{application: app},
-		subtitle,
+		&wailsApplicationController{application: wailsApp},
+		subtitleController,
 		&wailsWindowController{window: settingsWindow},
 	)
 	settingsWindow.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
@@ -99,7 +95,8 @@ func main() {
 		})
 	})
 
-	if err := app.Run(); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "应用启动失败: %v\n", err)
+	if err := wailsApp.Run(); err != nil {
+		return fmt.Errorf("应用启动失败: %w", err)
 	}
+	return nil
 }
