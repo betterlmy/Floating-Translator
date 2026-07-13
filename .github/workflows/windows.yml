@@ -143,8 +143,8 @@ jobs:
         shell: bash
         run: |
           version="0.1.0"
-          if [[ "$GITHUB_REF_NAME" == v* ]]; then
-            version="$(echo "$GITHUB_REF_NAME" | sed 's/^v//')"
+          if [[ "$GITHUB_REF_NAME" == [vV]* ]]; then
+            version="$(echo "$GITHUB_REF_NAME" | sed 's/^[vV]//')"
           fi
           make package-macos WAILS=wails3 MACOS_VERSION="$version"
 
@@ -189,6 +189,7 @@ jobs:
       - name: Create or update GitHub desktop release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           archive="release/windows/floating-translator-windows-amd64-${TAG_NAME}.zip"
